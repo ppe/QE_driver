@@ -11,10 +11,12 @@ char * sv_memalloc( int size ) {
            trap    #1
            movea.l a0,a6
            move.l  %1,d1
+           add.l   #$20,d1
            suba.l  a2,a2
            movea.w $C0,a2
            jsr     (a2)
            move.l  a0,d0
+           add.l   #$20,d0
            move.l   d0,%0
            move.l  (a7)+,a6
          " : "=d" (result)
@@ -33,6 +35,7 @@ void sv_memfree( char * address ) {
            trap    #1
            movea.l a0,a6
            move.l  %0,a0
+           suba.l  #$20,a0
            suba.l  a2,a2
            movea.w $C2,a2
            jsr     (a2)
