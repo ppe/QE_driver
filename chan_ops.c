@@ -1,6 +1,7 @@
 #include <qdos.h>
 #include "types.h"
 #include "chan_ops.h"
+#include "debug.h"
 
 // linefeed character
 #define CHR_LF 0x0a

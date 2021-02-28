@@ -22,8 +22,10 @@ static struct hostent_list_node *head = NULL;
 /* hostent result structures for each channel */
 const static size_t new_channel_alloc_size =
         sizeof(struct hostent_list_node) +
-        sizeof(struct channel_hostent) + 
+        sizeof(struct channel_hostent) +
         sizeof(struct hostent);
+
+struct channel_hostent * hostents[8] = {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
 
 unsigned short readWord(char *addr) {
     unsigned short val = 0;
@@ -55,7 +57,7 @@ unsigned long get_from_cache( char * hostname ) {
 	(void)io_sstrg((chanid_t)0,(timeout_t)0,hostname,strlen(hostname));
 	(void)io_sstrg((chanid_t)0,(timeout_t)0,"\n",1);
 
-	
+
     if(NULL == hostname) {
         return 0;
     }
@@ -328,11 +330,11 @@ void fillQuery(char * dnsQueryBuffer, char* host) {
 
 void sendQueryAndReceiveResponse(char *buf, uint32 bufSize ,uint32 len) {
     SOCKET s = 7;  /* Number of socket to use: 0-7 */
-    TRACE(("socket\n"));
+    /* TRACE(("socket\n")); */
     open_socket(s,Sn_MR_UDP,4224,0);
-    TRACE(("send_udp\n"));
+    /* TRACE(("send_udp\n")); */
     send_udp(s, buf, len);
-    TRACE(("read_udp\n"));
+    /* TRACE(("read_udp\n")); */
     read_udp(s, buf, bufSize);
     socket_close(s);
     return;
@@ -386,51 +388,45 @@ uint32 findIp(char * buf) {
 }
 
 struct channel_hostent *get_channel_hostent( const chanid_t channel ) {
-    struct hostent_list_node *current = head, *new_node, *tmp;
-    struct channel_hostent *chan_hostent = NULL, *new_chan_hostent;
+    struct channel_hostent *chan_hostent = NULL;
     struct hostent *new_hostent;
-    void *hostent_content_buf, *new_channel_alloc;
 
-    while(NULL != current) {
-        if(current->channel == channel) {
-            chan_hostent = current->content;
-            break;
-        }
-        current = current->next;
-    }
-    if( NULL != chan_hostent ) {
+    chan_hostent = hostents[channel];
+    if( chan_hostent ) {
         return chan_hostent;
     }
-    new_channel_alloc = sv_memalloc(new_channel_alloc_size);
-    if(NULL == new_channel_alloc) {
+    chan_hostent = sv_memalloc( sizeof( struct channel_hostent ));
+    if( ! chan_hostent ) { return NULL; }
+    new_hostent = sv_memalloc( sizeof( struct hostent ) );
+    if( ! new_hostent ) {
+        sv_memfree( (char *)chan_hostent );
         return NULL;
     }
-    /* Separate malloc for the result content buffer
-       because it may need to be reallocated to be larger */
-    /*
-    hostent_content_buf = malloc(HOSTENT_CONTENT_BUF_INITIAL_SIZE);
-    if(NULL == hostent_content_buf) {
-        free(new_channel_alloc);
-        return NULL;
-    }
-    */
 
-    tmp = (void *)((char *)new_channel_alloc + sizeof(struct hostent_list_node));
-    new_node = (struct hostent_list_node *)new_channel_alloc;
-    new_chan_hostent = (struct channel_hostent *)tmp;
-    new_hostent = (struct hostent *)((char *)new_channel_alloc +
-        sizeof(struct hostent_list_node) +
-        sizeof(struct channel_hostent));
-    TRACE(("New hostent @%08x\n",new_hostent));
-    new_chan_hostent->content_buf_size = HOSTENT_CONTENT_BUF_INITIAL_SIZE;
+    chan_hostent->hostent = new_hostent;
+    chan_hostent->content_buf_size = HOSTENT_CONTENT_BUF_INITIAL_SIZE;
     /* Will be allocated for each response separately */
-    new_chan_hostent->hostent_content_buf = NULL;
-    new_chan_hostent->hostent = new_hostent;
-    new_node->content = new_chan_hostent;
-    new_node->channel = channel;
-    new_node->next = head;
-    head = new_node;
-    return new_chan_hostent;
+    chan_hostent->hostent_content_buf = NULL;
+    TRACE(("Channel %d : new hostent @%08x\n", channel, new_hostent));
+    hostents[channel] = chan_hostent;
+    return chan_hostent;
+}
+
+void remove_channel_hostent( const chanid_t channel ) {
+    struct channel_hostent *chan_hostent = NULL;
+    struct hostent *hostent;
+
+    chan_hostent = hostents[channel];
+    if ( ! chan_hostent ) {
+        return;
+    }
+    if ( chan_hostent->hostent_content_buf ) {
+        sv_memfree( (char *)(chan_hostent->hostent_content_buf ) );
+    }
+    sv_memfree( (char *)(chan_hostent->hostent ));
+    sv_memfree( (char *)chan_hostent );
+    hostents[channel] = NULL;
+
 }
 
 void close_channel(const chanid_t channel) {
@@ -443,7 +439,7 @@ void close_channel(const chanid_t channel) {
             } else {
                 prev->next = current->next;
             }
-            TRACE(("Releasing %08x\n", current->content));
+            /* TRACE(("Releasing %08x\n", current->content)); */
             /*  TODO: free the inner mem reservations also (hostent buf) */
             sv_memfree((void *)current);
             break;
@@ -474,7 +470,7 @@ unsigned short findMallocSize(struct dns_reply_info *info) {
     ans_count = dns->ans_count; /* Number of answers */
 
     /*printf("%d questions, %d answers\n", qdcount, ans_count);*/
-    
+
     /*  Jump over questions to start of answer section */
     while(qdcount--) {
         /* Jump over query string in DNS label format */
@@ -587,7 +583,7 @@ void name_to_buf(char **src_h, char **target_h, char *dns_reply) {
 void fill_hostent( struct hostent *hostent, const struct dns_reply_info *info, const char *buf ) {
     static uint16 ans_count;
     /* Start of buf contains pointer table to IPv4 addresses terminated by null pointer
-    and a pointer table to cnames, again terminated by a null pointer 
+    and a pointer table to cnames, again terminated by a null pointer
     Offset points to past of these two pointer tables */
     static uint32 *addr_table;
     static char *content;
@@ -599,7 +595,7 @@ void fill_hostent( struct hostent *hostent, const struct dns_reply_info *info, c
 
     ans_count = info->num_as+info->num_cnames;
     /* Start of buf contains pointer table to IPv4 addresses terminated by null pointer
-       and a pointer table to cnames, again terminated by a null pointer 
+       and a pointer table to cnames, again terminated by a null pointer
        Offset points to past of these two pointer tables */
     addr_table = buf + (ans_count + 2)*sizeof(char *);
     content = ((char *)addr_table) + info->num_as * sizeof(uint32);
@@ -609,14 +605,14 @@ void fill_hostent( struct hostent *hostent, const struct dns_reply_info *info, c
     addr_table_ptr = (char **)buf;
     a_record_found = 0;
 
-    TRACE(("#ans: %d, hostent: %08x, reply: %08x, answer: %08x, buf: %08x, addr_table_ptr %08x\n",
-           ans_count, hostent, info->reply, res_pointer, buf, addr_table_ptr));
+    /* TRACE(("#ans: %d, hostent: %08x, reply: %08x, answer: %08x, buf: %08x, addr_table_ptr %08x\n", */
+    /*        ans_count, hostent, info->reply, res_pointer, buf, addr_table_ptr)); */
     hostent->h_addrtype = CLASS_IN;
     hostent->h_length = sizeof(uint32);
     hostent->h_addr_list = (char **)buf;
     hostent->h_aliases = (char **)(buf + (info->num_as + 1)*sizeof(char *));
     alias_table_ptr = hostent->h_aliases;
-    TRACE(("h_addr_list: %08x, h_aliases: %08x\n", hostent->h_addr_list, hostent->h_aliases));
+    /* TRACE(("h_addr_list: %08x, h_aliases: %08x\n", hostent->h_addr_list, hostent->h_aliases)); */
     while(ans_count--) {
         static uint32 *ptr_addr;
         static uint16 name_len,offset;
@@ -625,16 +621,16 @@ void fill_hostent( struct hostent *hostent, const struct dns_reply_info *info, c
         static char *res;
         static unsigned short type;
 
-        TRACE(("ans_count: %d\n",ans_count));
+        /* TRACE(("ans_count: %d\n",ans_count)); */
         name_len = offset = 0;
         part_len = jumped = 0;
         type = 0;
 
         name_to_buf(&res_pointer, &content, info->reply);
-        TRACE(("Found name, "));
+        /* TRACE(("Found name, ")); */
         type = readWord(res_pointer);
         if( T_CNAME == type ) {
-            TRACE(("alias\n"));
+            /* TRACE(("alias\n")); */
             *alias_table_ptr++ = prev_start;
             prev_start = content;
         } else if( T_A == type ) {
@@ -651,7 +647,7 @@ void fill_hostent( struct hostent *hostent, const struct dns_reply_info *info, c
                 content = prev_start;
                 a_record_found++;
             }
-            TRACE(("address %08x\n",address));
+            /* TRACE(("address %08x\n",address)); */
             *addr_table = address;
             *addr_table_ptr++ = addr_table;
             addr_table++;
@@ -709,7 +705,7 @@ struct hostent *gethostbyname_impl(const char *hostname, const chanid_t channel)
         table = (char **)content;
         he = chan_hostent->hostent;
 
-        TRACE(("Allocated %u bytes for hostent content at %08x\n", malloc_size, content));
+        /* TRACE(("Allocated %u bytes for hostent content at %08x\n", malloc_size, content)); */
         chan_hostent->hostent_content_buf = (void *)content;
         table[3] = (char *)ipv4address;
         table[0] = (char *)&(table[3]);
@@ -726,26 +722,24 @@ struct hostent *gethostbyname_impl(const char *hostname, const chanid_t channel)
         strcat(host,".");
     }
 
-    TRACE(("# Channel hostent at %08x, hostent: %08x\n", chan_hostent,chan_hostent->hostent));
+    /* TRACE(("# Channel hostent at %08x, hostent: %08x\n", chan_hostent,chan_hostent->hostent)); */
     orig_buf = buf = (char *)sv_memalloc(UDP_MSG_BUF_SIZE);
-    TRACE(("## Channel hostent at %08x, hostent: %08x\n", chan_hostent,chan_hostent->hostent));
+    /* TRACE(("## Channel hostent at %08x, hostent: %08x\n", chan_hostent,chan_hostent->hostent)); */
     if( NULL == buf ) {
         /* TODO set errno */
         return NULL;
     }
-    TRACE(("Allocated %u bytes for DNS query/reply buf at %08x\n", UDP_MSG_BUF_SIZE, orig_buf));
+    /* TRACE(("Allocated %u bytes for DNS query/reply buf at %08x\n", UDP_MSG_BUF_SIZE, orig_buf)); */
     dns = (struct DNS_HEADER *)buf;
     qname =(char*)&(buf[sizeof(struct DNS_HEADER)]);
-    TRACE(("BFFH -> Channel hostent at %08x, hostent: %08x\n", chan_hostent,chan_hostent->hostent));
     fillHeader(dns);
     /* dump((char *)dns,sizeof(struct DNS_HEADER)); */
     /* TRACE(("Query host '%s'\n",host)); */
-    TRACE(("BFQ -> Channel hostent at %08x, hostent: %08x\n", chan_hostent,chan_hostent->hostent));
     fillQuery(buf, (char *)host);
     /* TODO correlate query and answer with an Id*/
     sendQueryAndReceiveResponse(buf, UDP_MSG_BUF_SIZE, (uint32)sizeof(struct DNS_HEADER) + (strlen((const char*)qname)+1) + sizeof(struct QUESTION));
     /*
-    SOCKET s = 0; 
+    SOCKET s = 0;
     socket(s,Sn_MR_UDP,4224,0);
     send_udp(s, buf, len);
     read_udp(s, buf, bufSize);
@@ -766,9 +760,9 @@ struct hostent *gethostbyname_impl(const char *hostname, const chanid_t channel)
         /* TODO set errno */
         return NULL;
     }
-    TRACE(("Allocated %u bytes for hostent content at %08x\n", malloc_size, content));
+    /* TRACE(("Allocated %u bytes for hostent content at %08x\n", malloc_size, content)); */
     chan_hostent->hostent_content_buf = (void *)content;
-    TRACE(("Call fill_hostent, hostent: %08x, buf: %08x\n", chan_hostent->hostent, content));
+    /* TRACE(("Call fill_hostent, hostent: %08x, buf: %08x\n", chan_hostent->hostent, content)); */
     fill_hostent( chan_hostent->hostent, &info, content );
 
     /* { */

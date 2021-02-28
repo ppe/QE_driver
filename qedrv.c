@@ -12,6 +12,10 @@
 // Total size of channel block
 #define CHAN_BLOCK_SIZE 0x100
 
+typedef struct qe_chandef {
+    int socket_num;
+} qe_chandef_t;
+
 // QDOS IO Sub System operation codes
 #define IO_FBYTE 1
 #define IO_FLINE 2
@@ -53,7 +57,7 @@ int parse_channel_def( const QLSTR_t *name, ip_peer *peer, unsigned short socket
 
     rest[0] = rest[1] = 0;
     namelen = name->qs_strlen;
-    TRACE(("Namelen: %d\n", namelen));
+    /* TRACE(("Namelen: %d\n", namelen)); */
     name_prefix = *( (unsigned long *)name->qs_str ) & 0xdfdfdfff;
     if( SCK_==name_prefix ) { peer->type = SCK; }
     else if ( TCP_ == name_prefix ) { peer->type = TCP; }
@@ -66,14 +70,14 @@ int parse_channel_def( const QLSTR_t *name, ip_peer *peer, unsigned short socket
     if( !(alloc_address = chan_def = sv_memalloc( namelen + 1)))  {
         return -1;
     }
-    TRACE(("alloc at %08x\n", alloc_address));
+    /* TRACE(("alloc at %08x\n", alloc_address)); */
     strncpy( chan_def, name->qs_str+4, namelen-4 );
     chan_def[namelen-4] = 0;
-    TRACE(("Chandef: '%s'\n",chan_def));
+    /* TRACE(("Chandef: '%s'\n",chan_def)); */
     num_read = sscanf( chan_def, "%255[^:]:%u%1s%n", address, &port, rest, &n );
-    TRACE(("addr=%s\n",address));
-    TRACE(("n=%d\n",n));
-    TRACE(("num_read=%d\n",num_read));
+    /* TRACE(("addr=%s\n",address)); */
+    /* TRACE(("n=%d\n",n)); */
+    /* TRACE(("num_read=%d\n",num_read)); */
 
     if( 2 != num_read ) {
         /* PRINT0(chan_def); */
@@ -94,14 +98,14 @@ int parse_channel_def( const QLSTR_t *name, ip_peer *peer, unsigned short socket
         TRACE(("Stored ip %08x at peer %08x\n", peer->ip, peer ));
     } else {
         struct hostent *hostent;
-        TRACE(("Resolve address %s\n", address));
+        /* TRACE(("Resolve address %s\n", address)); */
         hostent = gethostbyname_impl( address, (chanid_t)socket_num);
         if( NULL != hostent && NULL != (unsigned int *)hostent->h_addr ) {
             peer->ip = *((unsigned int *)hostent->h_addr);
         }
         /* resolve address */
     }
-    TRACE(("Free %08x\n", alloc_address));
+    /* TRACE(("Free %08x\n", alloc_address)); */
     sv_memfree( alloc_address );
     return 0;
 }
@@ -109,7 +113,7 @@ int parse_channel_def( const QLSTR_t *name, ip_peer *peer, unsigned short socket
 long ch_open() {
     register QLSTR_t *name asm( "a0" );
     static QLSTR_t *name_store;
-    static char *channel_block;
+    static qe_chandef_t *channel_block;
 
     static unsigned short namelen;
     static unsigned long name_prefix;
@@ -131,7 +135,7 @@ long ch_open() {
     }
     /* uppercase the first three characters of the channel name */
     name_prefix = *( (unsigned long *)name_store->qs_str ) & 0xdfdfdfff;
-    TRACE(( "Prefix=%08x\n",name_prefix ));
+    /* TRACE(( "Prefix=%08x\n",name_prefix )); */
     if( !( SCK_ == name_prefix ) && !( TCP_ == name_prefix ) && !( UDP_ == name_prefix )) {
         /* Wrong prefix for channels this driver supports */
         TRACE(( "Wrong prefix\n" ));
@@ -143,12 +147,13 @@ long ch_open() {
     }
     // $18 bytes for header + whatever is required by implementation
     // http://www.qdosmsq.dunbar-it.co.uk/doku.php?id=qdosmsq:sbinternal:chandef&s[]=channel&s[]=definition&s[]=block
-    if( !(channel_block = sv_memalloc( CHAN_BLOCK_SIZE ))) {
+    if( !(channel_block = (qe_chandef_t *)sv_memalloc( CHAN_BLOCK_SIZE ))) {
         // Out of Memory
         return ERR_OM;
     }
     for ( i = 7; i > -1; i-- ) {
         if( NULL ==  peers[i] ) {
+            channel_block->socket_num = i;
             break;
         }
     }
@@ -157,9 +162,7 @@ long ch_open() {
         asm( " move.l %0,a0" : : "m" (name_store));
         return ERR_IU;
     }
-    TRACE(("before memalloc i=%u\n",i));
     peer = sv_memalloc( sizeof( ip_peer ) );
-    TRACE(("after memalloc peer=%08x, i=%u\n",peer, i));
     if( !peer ) { return ERR_OM; }
     peer->ip=0;peer->port=0;
     err = parse_channel_def( name_store, peer, i );
@@ -184,9 +187,22 @@ long ch_open() {
 }
 
 static long ch_close() {
-    register char *chan_blk asm( "a0" );
-    char *chan_blk_store = chan_blk;
-    sv_memfree( chan_blk_store );
+    register qe_chandef_t *chan_blk asm( "a0" );
+    register int socknum;
+    qe_chandef_t *chan_blk_store = chan_blk;
+
+    socknum = chan_blk_store->socket_num;
+    TRACE(("Releasing socket %d : disconnect, ", socknum));
+    disconnect( socknum );
+    TRACE(("close, ", socknum));
+    socket_close( socknum );
+    TRACE(("free peer, ", socknum));
+    sv_memfree( (char *)(peers[socknum]) );
+    TRACE(("free channel block, ", socknum));
+    sv_memfree( (char *)chan_blk_store );
+    TRACE(("erase peer entry...", socknum));
+    peers[socknum] = NULL;
+    TRACE(("done.\n", socknum));
     return ERR_OK;
 }
 

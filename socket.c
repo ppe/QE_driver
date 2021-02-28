@@ -67,24 +67,24 @@ void socket_close(SOCKET s)
    /* M_08082008 : It is fixed the problem that Sn_SSR cannot be changed a undefined value to the defined value. */
    /*              Refer to Errata of W5300 */
    /*Check if the transmit data is remained or not. */
-   if( ((getSn_MR(s)& 0x0F) == Sn_MR_TCP) && (getSn_TX_FSR(s) != getIINCHIP_TxMAX(s)) )
-   {
-      uint16 loop_cnt =0;
-      while(getSn_TX_FSR(s) != getIINCHIP_TxMAX(s))
-      {
-         if(loop_cnt++ > 10)
-         {
-            uint8 destip[4];
-            /* M_11252008 : modify dest ip address */
-            /*getSIPR(destip); */
-            destip[0] = 0;destip[1] = 0;destip[2] = 0;destip[3] = 1;
-            open_socket(s,Sn_MR_UDP,0x3000,0);
-            sendto(s,(uint8*)"x",1,destip,0x3000); /* send the dummy data to an unknown destination(0.0.0.1). */
-            break; /* M_11252008 : added break statement */
-         }
-         wait_10ms(10);
-      }
-   }
+   /* if( ((getSn_MR(s)& 0x0F) == Sn_MR_TCP) && (getSn_TX_FSR(s) != getIINCHIP_TxMAX(s)) ) */
+   /* { */
+   /*    uint16 loop_cnt =0; */
+   /*    while(getSn_TX_FSR(s) != getIINCHIP_TxMAX(s)) */
+   /*    { */
+   /*       if(loop_cnt++ > 10) */
+   /*       { */
+   /*          uint8 destip[4]; */
+   /*          /\* M_11252008 : modify dest ip address *\/ */
+   /*          /\*getSIPR(destip); *\/ */
+   /*          destip[0] = 0;destip[1] = 0;destip[2] = 0;destip[3] = 1; */
+   /*          open_socket(s,Sn_MR_UDP,0x3000,0); */
+   /*          sendto(s,(uint8*)"x",1,destip,0x3000); /\* send the dummy data to an unknown destination(0.0.0.1). *\/ */
+   /*          break; /\* M_11252008 : added break statement *\/ */
+   /*       } */
+   /*       wait_10ms(10); */
+   /*    } */
+   /* } */
    /*////////////////////////////    */
    setSn_IR(s ,0x00FF);          /* Clear the remained interrupt bits. */
    setSn_CR(s ,Sn_CR_CLOSE);     /* Close s-th SOCKET      */
