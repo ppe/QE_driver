@@ -10,6 +10,9 @@
  *
  */
 
+typedef struct qe_chandef {
+    int socket_num;
+} qe_chandef_t;
 
 typedef char int8;                        /**< The 8-bit signed data type. */
 

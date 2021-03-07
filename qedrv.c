@@ -4,6 +4,7 @@
 #include "resolv.h"
 #include "chan_ops.h"
 #include "heap.h"
+#include "socket.h"
 #include "debug.h"
 
 #define PRINTB0( ch ) (void)io_sbyte( (chanid_t)0, (timeout_t)0, ch )
@@ -11,10 +12,6 @@
 
 // Total size of channel block
 #define CHAN_BLOCK_SIZE 0x100
-
-typedef struct qe_chandef {
-    int socket_num;
-} qe_chandef_t;
 
 // QDOS IO Sub System operation codes
 #define IO_FBYTE 1
@@ -121,6 +118,7 @@ long ch_open() {
     static int err;
     static int i;
     static ip_peer *peer;
+    static char *tmp;
 
     name_store = name;
     size = sizeof(ip_peer);
@@ -138,7 +136,7 @@ long ch_open() {
     /* TRACE(( "Prefix=%08x\n",name_prefix )); */
     if( !( SCK_ == name_prefix ) && !( TCP_ == name_prefix ) && !( UDP_ == name_prefix )) {
         /* Wrong prefix for channels this driver supports */
-        TRACE(( "Wrong prefix\n" ));
+        /* TRACE(( "Wrong prefix\n" )); */
         // a0 must be returned unmodified if open is unsuccesful
         asm( " move.l %0,a0" : : "m" (name_store));
 
@@ -173,6 +171,18 @@ long ch_open() {
         return err;
     }
     peers[i] = peer;
+    TRACE(("recv_buf[%d]=%08x, ", i, recv_buf[i]));
+    if ( ! recv_buf[i] ) {
+        tmp = sv_memalloc( TCP_MAX_MTU );
+        /* TODO: sv_memalloc error checking */
+        TRACE((" alloc buf at %08x\n", tmp));
+        recv_buf[i] = tmp;
+    } else {
+        TRACE(("NO alloc\n"));
+    }
+    recv_buf_ptr[i] = recv_buf[i];
+    tcp_pack_remain[i] = 0;
+    tcp_pack_size[i] = 0;
     TRACE(( "Allocated peer struct at %08x, ref = %u\n", peer, i ));
     TRACE(( "Type: %u, IP: %08x, port %u\n", peer->type, peer->ip, peer->port ));
     if( SCK != peer->type ) {
@@ -189,20 +199,32 @@ long ch_open() {
 static long ch_close() {
     register qe_chandef_t *chan_blk asm( "a0" );
     register int socknum;
+    register uint32 available;
     qe_chandef_t *chan_blk_store = chan_blk;
 
     socknum = chan_blk_store->socket_num;
-    TRACE(("Releasing socket %d : disconnect, ", socknum));
+    /* TRACE(("Releasing socket %d : disconnect, ", socknum)); */
     disconnect( socknum );
-    TRACE(("close, ", socknum));
-    socket_close( socknum );
-    TRACE(("free peer, ", socknum));
+    /* TRACE(("close, ", socknum)); */
+    socket_close( (SOCKET)socknum );
+    socket_drain( (SOCKET)socknum );
+    /* TRACE(("free peer, ", socknum)); */
     sv_memfree( (char *)(peers[socknum]) );
-    TRACE(("free channel block, ", socknum));
+    /* TRACE(("free channel block, ", socknum)); */
     sv_memfree( (char *)chan_blk_store );
-    TRACE(("erase peer entry...", socknum));
+    /* TRACE(("erase peer entry...", socknum)); */
     peers[socknum] = NULL;
-    TRACE(("done.\n", socknum));
+    if ( recv_buf[socknum] ) {
+        TRACE(("Free socket %d recv buf\n",socknum));
+        sv_memfree( recv_buf[socknum]); }
+    recv_buf[socknum] = NULL;
+    recv_buf_ptr[socknum] = NULL;
+    tcp_pack_remain[socknum] = 0;
+    tcp_pack_size[socknum] = 0;
+    /* TRACE(("done.\n", socknum)); */
+    available = bytes_available( socknum );
+    /* W5300 internal buffer gets cleared and available bytes reset when socket is re-opened */
+    TRACE(( "Socket %d close, bytes remaining: %d\n", socknum, available ));
     return ERR_OK;
 }
 
@@ -287,6 +309,7 @@ long ch_io() {
 }
 
 int main( int ac, char **av ) {
+    register short i;
     /* char foo[256]; */
     /* QLSTR_t *puup; */
     /* QLSTR_DEF(a,256); */
@@ -300,11 +323,17 @@ int main( int ac, char **av ) {
     /* PRINT0( a ); */
     /* PRINT0( msg_init ); */
     PRINT0("QE Driver\n");
-    TRACE(("Linking...\n"));
+    TRACE(("Linking QE driver._-O-_.\n"));
     // linkblk.ld_next will be populate by QDOS when driver is linked
     linkblk.ld_io = ch_io;
     linkblk.ld_open = ch_open;
     linkblk.ld_close = ch_close;
     mt_liod( &linkblk );
+    for ( i = MAX_SOCK_NUM - 1; i>= 0; i--) {
+        recv_buf[i] = NULL;
+        tcp_pack_remain[i] = 0;
+        tcp_pack_size[i] = 0;
+        recv_buf_ptr[i] = NULL;
+    }
     /* PRINT0( msg_done ); */
 }

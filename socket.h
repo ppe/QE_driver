@@ -48,6 +48,12 @@ Linux socket compatibility recv flags
 #define	MSG_CTRUNC	0x20		/* control data lost before delivery */
 #define	MSG_WAITALL	0x40		/* wait for full request or error */
 
+#define TCP_MAX_MTU 1500
+#define MAX_WAIT_CYCLES 100
+extern char *recv_buf[];
+extern int tcp_pack_remain[];
+extern int tcp_pack_size[];
+extern char *recv_buf_ptr[];
 
 struct peek_cache_entry {
 	size_t bytes_available;
@@ -64,7 +70,10 @@ struct peek_cache_entry {
  * Open a SOCKET.
  */ 
 uint8    open_socket(SOCKET s, uint8 protocol, uint16 port, uint16 flag);
+uint8 is_closed( SOCKET s );
 
+uint32 bytes_available( SOCKET s );
+void socket_drain(SOCKET s);
 /**
  * Close a SOCKET.
  */ 
@@ -88,12 +97,13 @@ uint8    listen(SOCKET s);
 /**
  * It sends TCP data on a connection SOCKET
  */
-int32   socket_send(SOCKET s, uint8 * buf, uint32 len);
+int32   socket_send(int s, uint8 * buf, uint32 len);
 
 /**
  * It receives TCP data on a connection SOCKET
  */
-int socket_recv (int s, void *b, uint16 ln, unsigned int flag);
+/* int socket_recv (int s, void *b, uint16 ln, unsigned int flag); */
+int32 socket_recv(SOCKET sock, char* buf );
 uint32   recv_w5300(SOCKET s, uint8 * buf, uint32 len);
 
 /**

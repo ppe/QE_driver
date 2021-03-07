@@ -42,6 +42,12 @@ uint16   iinchip_source_port;
  */
 uint8    check_sendok_flag[MAX_SOCK_NUM];
 
+/* TCP_MAX_MTU */
+char *recv_buf[MAX_SOCK_NUM];
+int tcp_pack_remain[MAX_SOCK_NUM];
+int tcp_pack_size[MAX_SOCK_NUM];
+char *recv_buf_ptr[MAX_SOCK_NUM];
+
 
 uint8    open_socket(SOCKET s, uint8 protocol, uint16 port, uint16 flag)
 {
@@ -60,6 +66,18 @@ uint8    open_socket(SOCKET s, uint8 protocol, uint16 port, uint16 flag)
       printf("%d : Sn_MR=0x%04x,Sn_PORTR=0x%04x(%d),Sn_SSR=%04x\r\n",s,IINCHIP_READ(Sn_MR(s)),IINCHIP_READ(Sn_PORTR(s)),IINCHIP_READ(Sn_PORTR(s)),getSn_SSR(s));
    #endif
    return 1;
+}
+
+void socket_drain(SOCKET s) {
+    /* Drain pending input from socket */
+}
+
+uint8 is_closed( SOCKET s ) {
+    return SOCK_CLOSED == getSn_SSR( s );
+}
+
+uint32 bytes_available( SOCKET s ) {
+    return getSn_RX_RSR(s);
 }
 
 void socket_close(SOCKET s)
@@ -150,26 +168,19 @@ uint8    listen(SOCKET s)
    return 1;
 }
 
-int32   socket_send(SOCKET s, uint8 * buf, uint32 len)
+int32   socket_send(int s, uint8 * buf, uint32 len)
 {
-   uint8 status=0;
-   uint32 ret=0;
-   uint32 freesize=0;
-   #ifdef __DEF_IINCHIP_DBG__
-      uint32 loopcnt = 0;
-
-      printf("%d : send()\n",s);
-   #endif
-
-   ret = len;
-   if (len > getIINCHIP_TxMAX(s)) ret = getIINCHIP_TxMAX(s); /* check size not to exceed MAX size. */
-   #ifdef __DEF_IINCHIP_DBG__
-            printf("%d : freesize=%ld,status=%04x\n",s,freesize,status);
-            printf("%d:Send Size=%08lx(%d)\n",s,ret,ret);
-            printf("MR=%04x\r\n",*((vuint16*)MR));
-   #endif
-
-
+    static uint8 status=0;
+    static uint32 ret=0;
+    static uint32 freesize=0;
+    TRACE(("socket_send: s=%d,buf=%08x,len=%08x\n", s, buf, len));
+    status = 0;
+    freesize = 0;
+    ret = len;
+   /* if (len > getIINCHIP_TxMAX(s)) ret = getIINCHIP_TxMAX(s); /\* check size not to exceed MAX size. *\/ */
+   TRACE(("%d : freesize=%ld,status=%04x\n",s,freesize,status));
+   TRACE(("%d:Send Size=%08lx(%d)\n",s,ret,ret));
+   TRACE(("MR=%04x\r\n",*((vuint16*)MR)));
 
    /*
     * \note if you want to use non blocking function, <b>"do{}while(freesize < ret)"</b> code block
@@ -181,50 +192,52 @@ int32   socket_send(SOCKET s, uint8 * buf, uint32 len)
     */
    /* ----------------------- */
    /* NOTE : CODE BLOCK START */
-   do
-   {
-      freesize = getSn_TX_FSR(s);
-      status = getSn_SSR(s);
-      #ifdef __DEF_IINCHIP_DBG__
-         printf("%d : freesize=%ld\n",s,freesize);
-         if(loopcnt++ > 0x0010000)
-         {
-            printf("%d : freesize=%ld,status=%04x\n",s,freesize,status);
-            printf("%d:Send Size=%08lx(%d)\n",s,ret,ret);
-            printf("MR=%04x\r\n",*((vuint16*)MR));
-            loopcnt = 0;
-         }
-      #endif
-      if ((status != SOCK_ESTABLISHED) && (status != SOCK_CLOSE_WAIT)) return 0;
-   } while (freesize < ret);
+   while((freesize = getSn_TX_FSR(s))==0);
+   if( ret > freesize ) {
+       ret = freesize;
+   }
+   /* do */
+   /* { */
+   /*    freesize = getSn_TX_FSR(s); */
+   /*    status = getSn_SSR(s); */
+   /*    TRACE(("%d : freesize=%ld\n",s,freesize)); */
+   /*       if(loopcnt++ > 0x0010000) */
+   /*       /\* { *\/ */
+   /*       /\*    printf("%d : freesize=%ld,status=%04x\n",s,freesize,status); *\/ */
+   /*       /\*    printf("%d:Send Size=%08lx(%d)\n",s,ret,ret); *\/ */
+   /*       /\*    printf("MR=%04x\r\n",*((vuint16*)MR)); *\/ */
+   /*       /\*    loopcnt = 0; *\/ */
+   /*       /\* } *\/ */
+   /*           if ((status != SOCK_ESTABLISHED) && (status != SOCK_CLOSE_WAIT)) { */
+   /*               TRACE(("Wrong socket state: %d\n", status)); */
+   /*               return 0; */
+   /*           }; */
+   /* } while (freesize < ret); */
    /* NOTE : CODE BLOCK END */
    /* --------------------- */
 
+   TRACE(("%d : write %d bytes\n", s, ret));
    wiz_write_buf(s,buf,ret);                 /* copy data */
-
-   #ifdef __DEF_IINCHIP_DBG__
-      loopcnt=0;
-   #endif
 
    if(!check_sendok_flag[s])                 /* if first send, skip. */
    {
       while (!(getSn_IR(s) & Sn_IR_SENDOK))  /* wait previous SEND command completion. */
       {
-      #ifdef __DEF_IINCHIP_DBG__
+      /* #ifdef __DEF_IINCHIP_DBG__ */
 
-         if(loopcnt++ > 0x010000)
-         {
-            printf("%d:Sn_SSR(%04x)\r\n",s,status);
-            printf("%d:Send Size=%08lx(%d)\r\n",s,ret,ret);
-            printf("MR=%04x\r\n",*((vuint16*)MR));
-            loopcnt = 0;
-         }
-      #endif
+      /*    if(loopcnt++ > 0x010000) */
+      /*    { */
+      /*       printf("%d:Sn_SSR(%04x)\r\n",s,status); */
+      /*       printf("%d:Send Size=%08lx(%d)\r\n",s,ret,ret); */
+      /*       printf("MR=%04x\r\n",*((vuint16*)MR)); */
+      /*       loopcnt = 0; */
+      /*    } */
+      /* #endif */
          if (getSn_SSR(s) == SOCK_CLOSED)    /* check timeout or abnormal closed. */
          {
-            #ifdef __DEF_IINCHIP_DBG__
-               printf("%d : Send Fail. SOCK_CLOSED.\r\n",s);
-            #endif
+            /* #ifdef __DEF_IINCHIP_DBG__ */
+            /*    printf("%d : Send Fail. SOCK_CLOSED.\r\n",s); */
+            /* #endif */
             return -1;
          }
       }
@@ -261,146 +274,110 @@ void initialize_peek_cache( struct peek_cache_entry *cache, uint8 num_elements )
    }
 }
 
-int socket_recv (int sock, void *buf, uint16 buf_len, unsigned int flags) {
-   static uint8 cache_initialized = 0;
-   static struct peek_cache_entry peek_cache[8];
-   uint8 ssr = 0;
-   uint16 pack_size=0;
-   uint32 bytes_read = 0;
-   uint16 bytes_to_read = 0;
-   uint32 bytes_available = 0;
-   struct peek_cache_entry *cache_entry = &peek_cache[sock];
+int32 socket_recv(SOCKET sock, char* buf ) {
+    register uint8 sock_status;
+    register uint16 wait_cycles;
+    register uint32 fifo_addr;
+    register int i;
+    uint32 bytes_available;
+    static uint16 dev_pack_size;
+    static int to_recv = 0;
 
-   if (!cache_initialized) {
-      initialize_peek_cache(&peek_cache[0], 8);
-      cache_initialized = 1;
-   }
+    wait_cycles = 0;
+    dev_pack_size = 0;
+    to_recv = 0;
+    bytes_available = 0;
 
-   if(flags & MSG_PEEK) {
-      if(cache_entry->bytes_available) {
-         int num_bytes = min(cache_entry->bytes_available, buf_len);
-         memcpy(buf, cache_entry->read_position, num_bytes);
-         return num_bytes;
-      }
-
-   }
-
-/*
-   if() {
-         cache_entry->read_position += num_bytes;
-         cache_entry->bytes_available -= num_bytes;
-         if( 0 == cache_entry->bytes_available) {
-            clear_cache_entry(cache_entry);
-         }
-
-   }
-*/
-   ssr = getSn_SSR(sock);
-
-   /* TODO if blocking IO used */
-   /*while ((bytes_available = getSn_RX_RSR(sock)) == 0 && (ssr != SOCK_CLOSED) && (ssr != SOCK_CLOSE_WAIT));*/
-
-   bytes_available = getSn_RX_RSR(sock);
-   bytes_to_read = min(bytes_available, buf_len);
-   if ( bytes_to_read > 0 ) {
-      /* TODO store the packet size somewhere... */
-      wiz_read_buf(sock,(uint8*)&pack_size,2);
-      #ifdef __DEF_IINCHIP_DBG__
-         printf("%d : recv() pack_size: %d,available: %ld\n",sock, pack_size, bytes_available);
-      #endif
-      bytes_read = wiz_read_buf(sock, buf, (uint32)pack_size);
-      /* TODO, if buf smaller than pack size then we should NOT tell W5300 that we have received pack!! */
-      setSn_CR(sock,Sn_CR_RECV);
-      while(getSn_CR(sock) != 0); /* Wait for w5300 to ack cmd by clearing the CR */
-      if(flags & MSG_PEEK) {
-         cache_data(buf, bytes_read, &peek_cache[sock]);
-      }
-   } else {
-      #ifdef __DEF_IINCHIP_DBG__
-         printf("%d : recv() No bytes to read.\n",sock);
-      #endif
-   }
-   return bytes_read;
+    i = (int)sock;
+    TRACE(("%d: receive to buf at %08x\n",i,buf));
+    if( tcp_pack_remain[i] > 0 ) {
+        to_recv = tcp_pack_remain[i] > TCP_MAX_MTU ? TCP_MAX_MTU : tcp_pack_remain[i];
+        tcp_pack_remain[i] -= to_recv;
+        /* PRINTB0('+'); */
+        /* ut_mint((chanid_t)0,tcp_pack_remain[i]); */
+    } else {
+        sock_status = GetSn_SSR(sock);
+        fifo_addr = Sn_RX_FIFOR(sock);
+        while ((bytes_available = getSn_RX_RSR(sock)) == 0
+               && (sock_status != SOCK_CLOSED)
+               && (sock_status != SOCK_CLOSE_WAIT)) {
+            if( ++wait_cycles > MAX_WAIT_CYCLES ) {
+                return -1;
+            }
+            wait_10ms(1);
+            sock_status = GetSn_SSR(sock);
+        }
+        dev_pack_size = IINCHIP_READ(fifo_addr);
+        /* PRINTB0('%'); */
+        /* ut_mint((chanid_t)0,dev_pack_size); */
+        if( dev_pack_size > TCP_MAX_MTU ) {
+            to_recv = TCP_MAX_MTU;
+            tcp_pack_remain[i] = dev_pack_size - to_recv;
+        } else {
+            to_recv = dev_pack_size;
+            tcp_pack_remain[i] = 0;
+        }
+        /* PRINTB0('#'); */
+        /* ut_mint((chanid_t)0,tcp_pack_remain[i]); */
+    }
+    tcp_pack_size[i] = to_recv;
+    tcp_pack_remain[i] = tcp_pack_size[i];
+    /* PRINTB0('+'); */
+    /* ut_mint((chanid_t)0,tcp_pack_size); */
+    /* PRINTB0('+'); */
+    /* PRINTB0(tcp_buf[0]); */
+    asm volatile ( "
+ movea.l %0,a0
+ movea.l %1,a1
+ moveq.l #0,d0
+ moveq.l #0,d1
+ move.w  %2,d0
+ lsr.w   #1,d0
+ addx.w  d1,d0
+unroll_start:
+ cmpi.w  #20,d0
+ blt     copy_loop_end
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ move.w  (a0),(a1)+
+ sub.w   #19,d0
+ dbra    d0,unroll_start
+ bra     copy_loop_end
+copy_loop: move.w  (a0),(a1)+
+copy_loop_end: dbra    d0,copy_loop
+         " :
+           : "a" (fifo_addr), "a" (buf), "d" (tcp_pack_size[i])
+           : "a0", "a1", "d0", "d1"
+        );
+    /* PRINTB0('+'); */
+    /* PRINTB0(tcp_buf[0]); */
+    if( !tcp_pack_remain[i] > 0 ) {
+        /* PRINTB0('<'); */
+        /* PRINTB0(10); */
+        setSn_CR(sock,Sn_CR_RECV);
+        while(getSn_CR(sock) != 0); /* Wait for w5300 to ack cmd by clearing the CR */
+    }
+    return tcp_pack_size[i];
 }
 
-uint32   recv_w5300(SOCKET s, uint8 * buf, uint32 len)
-{
-   uint16 pack_size=0;
-   uint32 rsize = 0;
-
-   #ifdef __DEF_IINCHIP_DBG__
-      printf("%d : recv()\r\n",s);
-   #endif
-
-   if(IINCHIP_READ(Sn_MR(s)) & Sn_MR_ALIGN)
-   {
-      wiz_read_buf(s, buf, (uint32)len);
-      setSn_CR(s,Sn_CR_RECV);
-      return len;
-   }
-   rsize=getSn_RX_RSR(s);
-   /*
-      #ifdef __DEF_IINCHIP_DBG__
-         printf("%d:rsize=%d\n",s,rsize);
-      #endif
-      */
-   if(rsize > 0)    {
-
-      wiz_read_buf(s,(uint8*)&pack_size,2);        /* extract the PACKET-INFO(DATA packet length) */
-      if( (*(vint16*)MR) & MR_FS )
-         pack_size = ((((pack_size << 8 ) & 0xFF00)) | ((pack_size >> 8)& 0x00FF));
-      /*
-      #ifdef __DEF_IINCHIP_DBG__
-         printf("%d:pack_size=%d\n",s,pack_size);
-      #endif
-      */
-
-      wiz_read_buf(s, buf, (uint32)pack_size);     /* copy data    */
-
-      setSn_CR(s,Sn_CR_RECV);                      /* recv */
-
-      /*
-      * \warning  send a packet for updating window size. This code block must be only used when W5300 do only receiving data.
-      */
-      /* ------------------------ */
-      /* WARNING CODE BLOCK START  */
-
-      /* M_15052008 : Replace Sn_CR_SEND with Sn_CR_SEND_KEEP. */
-      /*if(!(getSn_IR(s) & Sn_IR_SENDOK)) */
-      /*{ */
-      /*   setSn_TX_WRSR(s,0);                    /* size = 0 */
-      /*   setSn_CR(s,Sn_CR_SEND);                // send */
-      /*   while(!(getSn_IR(s) & Sn_IR_SENDOK));  // wait SEND command completion */
-      /*   setSn_IR(s,Sn_IR_SENDOK);              // clear Sn_IR_SENDOK bit */
-      /*} */
-
-      /* M_04072008 : Replace Sn_CR_SEND_KEP with Sn_CR_SEND. */
-      /*if(getSn_RX_RSR(s) == 0)                     // send the window-update packet when the window size is full */
-      /*{ */
-      /*   uint8 keep_time = 0; */
-      /*   if((keep_time=getSn_KPALVTR(s)) != 0x00) setSn_KPALVTR(s,0x00); // disables the auto-keep-alive-process */
-      /*   setSn_CR(s,Sn_CR_SEND_KEEP);              // send a keep-alive packet by command */
-      /*   setSn_KPALVTR(s,keep_time);               // restore the previous keep-alive-timer value */
-      /*} */
-      #if 0
-      if(getSn_RX_RSR(s) == 0)                     /* check if the window size is full or not */
-      { /* Sn_RX_RSR can be compared with another value instead of ¡®0¡¯,
-         according to the host performance of receiving data */
-         setSn_TX_WRSR(s,1);                       /* size : 1 byte dummy size */
-         IINCHIP_WRITE(Sn_TX_FIFOR(s),0x0000);     /* write dummy data into tx memory */
-         setSn_CR(s,Sn_CR_SEND);                   /* send                          */
-         while(!(getSn_IR(s) & Sn_IR_SENDOK));     /* wait SEND command completion  */
-         setSn_IR(s,Sn_IR_SENDOK);                 /* clear Sn_IR_SENDOK bit        */
-      }
-      #endif
-      /* WARNING CODE BLOCK END */
-      /* ---------------------- */
-   }
-   return (uint32)pack_size;
-}
-
-uint32   sendto(SOCKET s, uint8 * buf, uint32 len, uint8 * addr, uint16 port)
-{
+uint32   sendto(SOCKET s, uint8 * buf, uint32 len, uint8 * addr, uint16 port) {
    uint8 status=0;
    uint8 isr=0;
    uint32 ret=0;
