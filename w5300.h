@@ -34,6 +34,19 @@
 #include "config.h"
 
 
+/**
+ * Memory mapped hardware reset
+ */
+#define HW_RESET       (__DEF_IINCHIP_MAP_BASE__ + 0x1000)
+
+static uint8 tx_mem_conf[8] = {8,8,8,8,8,8,8,8};          /* for setting TMSR regsiter */
+static uint8 rx_mem_conf[8] = {8,8,8,8,8,8,8,8};          /* for setting RMSR regsiter */
+
+static uint8 ip[4] = {192,168,1,10};                   /* for setting SIP register */
+static uint8 gw[4] = {192,168,1,1};                     /* for setting GAR register */
+static uint8 sn[4] = {255,255,255,0};                     /* for setting SUBR register */
+static uint8 mac[6] = {0x02,0x00,0x00,0x42,0x42,0x42};      /* locally administered mac address */
+static unsigned char *hw_reset_addr = (unsigned char *)HW_RESET;
 
 /**
  *  Mode register.

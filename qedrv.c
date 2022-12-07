@@ -6,6 +6,7 @@
 #include "heap.h"
 #include "socket.h"
 #include "debug.h"
+#include "w5300.h"
 
 #define PRINTB0( ch ) (void)io_sbyte( (chanid_t)0, (timeout_t)0, ch )
 #define PRINT0( msg ) (void)io_sstrg( (chanid_t)0, (timeout_t)0, msg, strlen(msg))
@@ -19,6 +20,12 @@
 #define IO_FSTRG 3
 #define IO_SSTRG 7
 #define SD_CHENQ 0x0b
+#define IP_RECV  0x53
+
+// IO_OPEN open types passed in D3.L
+#define TYPE_OPEN 0 // No host/port required
+#define TYPE_OPEN_IN 1 // Host/port must be specified, used for outgoing connections
+#define TYPE_OPEN_NEW 2 // Host/port must be specified, used for incoming connections
 
 // Print a msg that is a QLSTR_t to channel 0
 //#define PRINT0( msg ) (void)io_sstrg( (chanid_t)0, (timeout_t)0, msg.qs_str, msg.qs_strlen )
@@ -32,16 +39,37 @@ typedef struct ip_peers {
 	unsigned short port;
 } ip_peer;
 
-// Prefix for channel open string for this driver
-static const char DRIVER_NAME[] = "echo_";
-
-/* 4 byte ASCII in uppercase */
+/* 4 bytes of ASCII in uppercase */
 const uint32 SCK_=0x53434b5f, TCP_=0x5443505f, UDP_=0x5544505f;
 ip_peer * peers[8] = {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
 
 
 // This driver's QDOS driver linkage block
 QLD_LINK_t linkblk;
+
+static QLSTR_INIT(err_memcfg,"Memory configuration error, can't initialize!\n");
+static QLSTR_INIT(msg_configured, "W5300 network card configured.\n");
+static QLSTR_INIT(msg_wait_begin, "Reset wait begin...");
+static QLSTR_INIT(msg_wait_end, "end\n");
+
+static int configure_W5300() {
+    // Writing a 0 to the HW reset address resets the W5300
+    *hw_reset_addr = 0;
+    PRINT0("Reset begin...");
+    wait_10ms(1); /* Wait 200ms for PLL to synchronize */
+    PRINT0("end.\n");
+    if(!sysinit(tx_mem_conf,rx_mem_conf))
+    {
+        PRINT0(&err_memcfg);
+        return -1;
+    }
+    setSHAR(mac);                                      /* set source hardware address */
+    setGAR(gw);                                     /* set gateway IP address */
+    setSUBR(sn);                                    /* set subnet mask address */
+    setSIPR(ip);                                    /* set source IP address */
+    PRINT0(&msg_configured);
+    return 0;
+}
 
 int parse_channel_def( const QLSTR_t *name, ip_peer *peer, unsigned short socket_num ) {
     static unsigned short namelen;
@@ -109,7 +137,9 @@ int parse_channel_def( const QLSTR_t *name, ip_peer *peer, unsigned short socket
 
 long ch_open() {
     register QLSTR_t *name asm( "a0" );
+    register unsigned long open_type asm( "d3" );
     static QLSTR_t *name_store;
+    static unsigned long open_type_store;
     static qe_chandef_t *channel_block;
 
     static unsigned short namelen;
@@ -121,6 +151,7 @@ long ch_open() {
     static char *tmp;
 
     name_store = name;
+    open_type_store = open_type;
     size = sizeof(ip_peer);
     namelen = name_store->qs_strlen;
     if( namelen < 4 ) {
@@ -157,16 +188,18 @@ long ch_open() {
     }
     if( -1 == i ) {
         // All sockets were reserved
+        sv_memfree( channel_block );
         asm( " move.l %0,a0" : : "m" (name_store));
         return ERR_IU;
     }
     peer = sv_memalloc( sizeof( ip_peer ) );
-    if( !peer ) { return ERR_OM; }
+    if( !peer ) { sv_memfree( channel_block ); return ERR_OM; }
     peer->ip=0;peer->port=0;
     err = parse_channel_def( name_store, peer, i );
     if( err ) {
         TRACE(("error parsing channel def %d\n", err));
         sv_memfree( (char *)peer );
+        sv_memfree( channel_block );
         asm( " move.l %0,a0" : : "m" (name_store));
         return err;
     }
@@ -244,65 +277,78 @@ long ch_io() {
 
 
     switch( optype ) {
-        case IO_FBYTE:
-            {
-                char c;
-                int status = ERR_OK;
+    case IO_FBYTE:
+    {
+        char c;
+        int status = ERR_OK;
 
-                c = fbyte( chanblk, &status );
-                asm( " move.l %0,a0
+        c = fbyte( chanblk, &status );
+        asm( " move.l %0,a0
                        move.b %1,d1
                      " : : "m" (chanblk),
-                           "m" (c) );
-                return status;
-            }
-            break;
-        case IO_SSTRG:
-            {
-                int bytes_sent;
+             "m" (c) );
+        return status;
+    }
+    break;
+    case IO_SSTRG:
+    {
+        int bytes_sent;
 
-                /*
-                param2 = number of bytes to write, size == word
-                addr1 = pointer to start of sequence of bytes to write
-                        passed as a handle so that implementation can update addr1
-                        in accordance with bytes written, see return parameters below
-                */
-                bytes_sent = sstrg( chanblk, timeout, (int)( param2 & 0x0000FFFF ), &addr1 );
-                /*
-                The following must be returned:
-                a0 = pointer to driver linkage block passed in when this function called
-                a1 = pointer to one byte past the last byte that was written
-                d1 = number of bytes written
-                */
-                asm( " move.l %0,a0
+        /*
+          param2 = number of bytes to write, size == word
+          addr1 = pointer to start of sequence of bytes to write
+          passed as a handle so that implementation can update addr1
+          in accordance with bytes written, see return parameters below
+        */
+        bytes_sent = sstrg( chanblk, timeout, (int)( param2 & 0x0000FFFF ), &addr1 );
+        /*
+          The following must be returned:
+          a0 = pointer to driver linkage block passed in when this function called
+          a1 = pointer to one byte past the last byte that was written
+          d1 = number of bytes written
+        */
+        asm( " move.l %0,a0
                        move.l %1,a1
                        move.l %2,d1
                      " : : "m" (chanblk),
-                           "m" (addr1),
-                           "m" (bytes_sent) );
-                return ERR_OK;
-            }
+             "m" (addr1),
+             "m" (bytes_sent) );
+        return ERR_OK;
+    }
             break;
-        case IO_FLINE:
-            {
-                uint16 bytes_read = 0;
-                int error_code = ERR_OK;
+    case IO_FLINE:
+    {
+        uint16 bytes_read = 0;
+        int error_code = ERR_OK;
 
-                bytes_read = fline( chanblk, timeout, (uint16)( param2 & 0x0000FFFF ), &addr1, &error_code );
-                asm( " move.l %0,a0
+        bytes_read = fline( chanblk, timeout, (uint16)( param2 & 0x0000FFFF ), &addr1, &error_code );
+        asm( " move.l %0,a0
                        move.l %1,a1
                        move.l %2,d1
                      " : : "m" (chanblk),
-                           "m" (addr1),
-                           "m" (bytes_read) );
-                return error_code;
+             "m" (addr1),
+             "m" (bytes_read) );
+        return error_code;
 
-            }
-        case SD_CHENQ:
-            {
-                asm( " move.l %0,a0" : : "m" (chanblk) );
-                return ERR_BP;
-            }
+    }
+    break;
+    case SD_CHENQ:
+    {
+        asm( " move.l %0,a0" : : "m" (chanblk) );
+        return ERR_BP;
+    }
+    case IP_RECV: {
+        uint32 bytes_read = 0;
+        int error_code = ERR_OK;
+        bytes_read = ip_recv( chanblk, timeout, param2, &addr1, &error_code );
+        asm( " move.l %0,a0
+                       move.l %1,a1
+                       move.l %2,d1
+                     " : : "m" (chanblk),
+             "m" (addr1),
+             "m" (bytes_read) );
+        return error_code;
+    }
     }
     asm( " move.l %0,a0" : : "m" (chanblk) );
     return ERR_OK;
@@ -322,7 +368,7 @@ int main( int ac, char **av ) {
     /* puup = cstr_to_ql(&a, foo); */
     /* PRINT0( a ); */
     /* PRINT0( msg_init ); */
-    PRINT0("QE Driver\n");
+    PRINT0("QE Driver for W5300\n");
     TRACE(("Linking QE driver._-O-_.\n"));
     // linkblk.ld_next will be populate by QDOS when driver is linked
     linkblk.ld_io = ch_io;
@@ -335,5 +381,6 @@ int main( int ac, char **av ) {
         tcp_pack_size[i] = 0;
         recv_buf_ptr[i] = NULL;
     }
+    configure_W5300();
     /* PRINT0( msg_done ); */
 }

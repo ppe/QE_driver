@@ -109,3 +109,45 @@ uint16 fline( char *chanblk, unsigned long timeout, uint16 buf_len, char **h_buf
     *h_buf = buf;
     return num_read;
 }
+
+uint32 io_recv( char *chanblk, unsigned long timeout, uint32 buf_len, char **h_buf, int *error_code ) {
+    register char *buf = *h_buf;
+    register char c = 0;
+    register uint16 num_read = 0;
+    register int i;
+
+    i = ((qe_chandef_t *)chanblk)->socket_num;
+    while ( num_read < buf_len ) {
+        if ( tcp_pack_remain[i] == 0 ) {
+            if ( bytes_available( (SOCKET)i ) ) {
+                if( get_next_packet( i, recv_buf[i] ) <= 0 ) {
+                    *error_code = ERR_NC;
+                    *h_buf = buf;
+                    return num_read;
+                }
+            } else {
+                // Can't read next packet - return appropriate error depending on socket state
+                if ( is_closed( (SOCKET)i )) {
+                    *error_code = ERR_EF;
+                } else {
+                    *error_code = ERR_NC;
+                }
+                *h_buf = buf;
+                return num_read;
+            }
+        }
+        tcp_pack_remain[i]--;
+        num_read++;
+        c = *recv_buf_ptr[i];
+        /* TRACE(("%c", c)); */
+        recv_buf_ptr[i]++;
+        *buf++ = c;
+    }
+    if( num_read == buf_len && CHR_LF != c ) {
+        *error_code = ERR_BO;
+    } else {
+        *error_code = ERR_OK;
+    }
+    *h_buf = buf;
+    return num_read;
+}

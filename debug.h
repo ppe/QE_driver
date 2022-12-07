@@ -1,9 +1,8 @@
 #ifndef	_DEBUG_H_
 #define	_DEBUG_H_
 
-#define QE_DEBUG 1
-/* #define QE_DEBUG_BUF 1 */
-#define DEBUG_BUF_SIZE 10000
+#define QE_DEBUG 0
+#define DEBUG_BUF_SIZE 160
 
 #define TRACE(x) do { if (QE_DEBUG) dbg_printf x; } while (0)
 #define PRINTB0( ch ) (void)io_sbyte( (chanid_t)0, (timeout_t)0, ch )

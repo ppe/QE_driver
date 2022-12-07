@@ -35,7 +35,7 @@
  /*
 #define __DEF_IINCHIP_MAP_BASE__ 0x43cd4
 */
-#define __DEF_IINCHIP_MAP_BASE__ 0xC8000
+#define __DEF_IINCHIP_MAP_BASE__ 0x4C8000
 
 #if (__DEF_IINCHIP_ADDRESS_MODE__ == __DEF_IINCHIP_DIRECT_MODE__)
    #define COMMON_REG_BASE   __DEF_IINCHIP_MAP_BASE__          /**< The base address of COMMON_REG */
