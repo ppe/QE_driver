@@ -110,7 +110,7 @@ uint16 fline( char *chanblk, unsigned long timeout, uint16 buf_len, char **h_buf
     return num_read;
 }
 
-uint32 io_recv( char *chanblk, unsigned long timeout, uint32 buf_len, char **h_buf, int *error_code ) {
+uint32 ip_recv( char *chanblk, unsigned long timeout, uint32 buf_len, char **h_buf, int *error_code ) {
     register char *buf = *h_buf;
     register char c = 0;
     register uint16 num_read = 0;

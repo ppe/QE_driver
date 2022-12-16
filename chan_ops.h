@@ -13,5 +13,6 @@
 extern char fbyte( char *, int * );
 extern int sstrg( char *, unsigned long, int, char ** );
 extern uint16 fline( char *, unsigned long , uint16, char **, int * );
+extern uint32 ip_recv(char *, unsigned long , uint32 , char **, int *);
 
 #endif
