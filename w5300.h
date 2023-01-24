@@ -37,7 +37,7 @@
 /**
  * Memory mapped hardware reset
  */
-#define HW_RESET       (__DEF_IINCHIP_MAP_BASE__ + 0x1000)
+#define HW_RESET       (__DEF_IINCHIP_MAP_BASE__ + 0x400)
 
 static uint8 tx_mem_conf[8] = {8,8,8,8,8,8,8,8};          /* for setting TMSR regsiter */
 static uint8 rx_mem_conf[8] = {8,8,8,8,8,8,8,8};          /* for setting RMSR regsiter */
