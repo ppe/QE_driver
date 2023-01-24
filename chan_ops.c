@@ -19,6 +19,19 @@ static inline short get_next_packet( int socknum, char *buf ) {
     return tcp_pack_remain[socknum];
 }
 
+void pend( char *chanblk, int *status ) {
+  register int i;
+  i = ((qe_chandef_t *)chanblk)->socket_num;
+  if( tcp_pack_remain[i] ){
+    *status = ERR_OK;
+    return;
+  }
+  if (bytes_available((SOCKET)i)) {
+    *status = ERR_OK;
+  }
+  *status = ERR_NC; /* No pending input */
+}
+
 char fbyte( char *chanblk, int *error_code ) {
     register int i;
     register char c;

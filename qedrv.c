@@ -15,6 +15,7 @@
 #define CHAN_BLOCK_SIZE 0x100
 
 // QDOS IO Sub System operation codes
+#define IO_PEND 0
 #define IO_FBYTE 1
 #define IO_FLINE 2
 #define IO_FSTRG 3
@@ -277,6 +278,18 @@ long ch_io() {
 
 
     switch( optype ) {
+    case IO_PEND:
+    {
+      int status = ERR_NC; /* ERR_NC = no pending input, ERR_OK = input pending */
+      pend( chanblk, &status );
+      {
+      asm(" move.l %0,a0
+            move.l %1,d3
+          " : : "m"(chanblk),
+                "m"(timeout));
+      return status;
+      }
+    }
     case IO_FBYTE:
     {
         char c;

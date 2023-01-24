@@ -10,6 +10,7 @@
 // Maximum length of characters that this driver can accept in a SSTRG
 #define MAX_LEN 0xE0
 
+extern void pend( char *, int * );
 extern char fbyte( char *, int * );
 extern int sstrg( char *, unsigned long, int, char ** );
 extern uint16 fline( char *, unsigned long , uint16, char **, int * );
