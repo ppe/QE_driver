@@ -38,6 +38,10 @@ typedef unsigned long uint32;             /**< The 32-bit unsigned data type. */
 
 typedef volatile unsigned long vuint32;   /**< The volatile 32-bit unsigned data type. */
 
+/* From UIP */
+typedef uint8 u8_t;
+
+typedef uint16 u16_t;
 /**
  * The SOCKET data type.
  */
