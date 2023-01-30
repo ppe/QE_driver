@@ -1,6 +1,7 @@
 #include <sys/types.h>
 #include <netdb.h>
 #include "socket.h"
+#include "types.h"
 
 
 /*Type field of Query and Answer */
@@ -19,6 +20,7 @@
 extern uint32 ngethostbyname (char*);
 extern struct hostent *gethostbyname_impl(const char *, const chanid_t);
 extern void close_channel(const chanid_t);
+extern void set_dns_server(uint8 *);
 
 struct channel_hostent {
 	void *hostent_content_buf;

@@ -41,6 +41,7 @@
 #include "dhcpc.h"
 #include "timer.h"
 #include "pt.h"
+#include "resolv.h"
 
 #define STATE_INITIAL         0
 #define STATE_SENDING         1
@@ -316,7 +317,7 @@ static PT_THREAD(handle_dhcp(void)) {
   setSIPR((uint8 *)s.ipaddr);
   setGAR((uint8 *)s.default_router);
   setSUBR((uint8 *)s.netmask);
-
+  set_dns_server((uint8 *)s.dnsaddr);
   /* Close the socket and drain any potentially remaining packets */
   socket_close((SOCKET)s.conn);
   while(bytes_available((SOCKET) s.conn)) {

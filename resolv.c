@@ -16,6 +16,7 @@
 static struct dns_cache_entry entry_cache[CACHED_ENTRIES];
 static int initialized = 0;
 static unsigned long cache_refcount;
+static uint8 dns_server_addr[4];
 
 /* Linked list of hostent storage for channels */
 static struct hostent_list_node *head = NULL;
@@ -27,14 +28,20 @@ const static size_t new_channel_alloc_size =
 
 struct channel_hostent * hostents[8] = {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
 
+void set_dns_server(uint8 *addr) {
+  dns_server_addr[0] = addr[0];
+  dns_server_addr[1] = addr[1];
+  dns_server_addr[2] = addr[2];
+  dns_server_addr[3] = addr[3];
+}
 unsigned short readWord(char *addr) {
-    unsigned short val = 0;
-    uint8 byte=0;
-    byte = *addr;
-    val = byte << 8;
-    byte = *(addr + 1);
-    val += byte;
-    return val;
+  unsigned short val = 0;
+  uint8 byte = 0;
+  byte = *addr;
+  val = byte << 8;
+  byte = *(addr + 1);
+  val += byte;
+  return val;
 }
 
 void initialize_cache() {
@@ -169,8 +176,6 @@ void store_in_cache( char * hostname, unsigned long address ) {
 
 void send_udp(SOCKET s, char * buf, uint32 len)
 {
- /* uint8 destip[4] = {8,8,8,8}; */
- uint8 destip[4] = {192,168,1,1};
  uint16 destport = 53;
  uint32 sent = 0;
 
@@ -178,11 +183,11 @@ void send_udp(SOCKET s, char * buf, uint32 len)
  {
   case SOCK_UDP:
       /* dump(buf,len); */
-  sent = sendto(s,(uint8 *)buf,len,destip,destport);
-  if(len != sent)
-  {
-     TRACE(("%d : Sendto Fail.len=%d, sent=%u, ",s,len, sent));
-     TRACE(("%d.%d.%d.%d(%d)\r\n",destip[0],destip[1],destip[2],destip[3],destport));
+      sent = sendto(s, (uint8 *)buf, len, dns_server_addr, destport);
+      if (len != sent) {
+        TRACE(("%d : Sendto Fail.len=%d, sent=%u, ", s, len, sent));
+        TRACE(("%d.%d.%d.%d(%d)\r\n", dns_server_addr[0], dns_server_addr[1], dns_server_addr[2],
+               dns_server_addr[3], destport));
  }
  break;
  default:
