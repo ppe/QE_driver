@@ -28,6 +28,7 @@ void pend( char *chanblk, int *status ) {
   }
   if (bytes_available((SOCKET)i)) {
     *status = ERR_OK;
+    return;
   }
   *status = ERR_NC; /* No pending input */
 }
@@ -126,7 +127,7 @@ uint16 fline( char *chanblk, unsigned long timeout, uint16 buf_len, char **h_buf
 uint32 ip_recv( char *chanblk, unsigned long timeout, uint32 buf_len, char **h_buf, int *error_code ) {
     register char *buf = *h_buf;
     register char c = 0;
-    register uint16 num_read = 0;
+    register uint32 num_read = 0;
     register int i;
 
     i = ((qe_chandef_t *)chanblk)->socket_num;
