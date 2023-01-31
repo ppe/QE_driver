@@ -228,7 +228,7 @@ static QLSTR_INIT(err_memcfg,"Memory configuration error, can't initialize!\n");
       TRACE(( "Allocated peer struct at %08x, ref = %u\n", peer, i ));
       TRACE(( "Type: %u, IP: %08x, port %u\n", peer->type, peer->ip, peer->port ));
       if( SCK != peer->type ) {
-          open_socket( (SOCKET)i, peer->type, peer->port, 0 );
+          open_socket( (SOCKET)i, peer->type, 0, 0 );
           if( TCP == peer->type && 0 != peer->ip && 0 != peer->port ) {
               connect( (SOCKET)i, (uint8 *)&(peer->ip), peer->port );
           }
