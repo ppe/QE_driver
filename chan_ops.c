@@ -157,11 +157,7 @@ uint32 ip_recv( char *chanblk, unsigned long timeout, uint32 buf_len, char **h_b
         recv_buf_ptr[i]++;
         *buf++ = c;
     }
-    if( num_read == buf_len && CHR_LF != c ) {
-        *error_code = ERR_BO;
-    } else {
-        *error_code = ERR_OK;
-    }
+    *error_code = ERR_OK;
     *h_buf = buf;
     return num_read;
 }
