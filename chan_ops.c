@@ -135,19 +135,19 @@ uint32 ip_recv( char *chanblk, unsigned long timeout, uint32 buf_len, char **h_b
         if ( tcp_pack_remain[i] == 0 ) {
             if ( bytes_available( (SOCKET)i ) ) {
                 if( get_next_packet( i, recv_buf[i] ) <= 0 ) {
-                    *error_code = ERR_NC;
+                    *error_code = ERR_OK;
                     *h_buf = buf;
-                    return num_read;
+                    return num_read == 0 ? -1 : num_read;
                 }
             } else {
                 // Can't read next packet - return appropriate error depending on socket state
                 if ( is_closed( (SOCKET)i )) {
                     *error_code = ERR_EF;
                 } else {
-                    *error_code = ERR_NC;
+                    *error_code = ERR_OK;
                 }
                 *h_buf = buf;
-                return num_read;
+                return num_read == 0 ? -1 : num_read;
             }
         }
         tcp_pack_remain[i]--;
