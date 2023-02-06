@@ -1,5 +1,5 @@
 CC = qdos-gcc
-CFLAGS = -nostartfiles -fomit-frame-pointer -O2
+CFLAGS = -nostartfiles -fomit-frame-pointer
 OBJS = heap.o clock-arch.o timer.o chan_ops.o debug.o dhcpc.o resolv.o socket.o w5300.o qedrv.o
 DHCPC_OBJS = heap.o clock-arch.o timer.o dhcpc.o dhcpc_main.o socket.o w5300.o
 RM = /bin/rm
