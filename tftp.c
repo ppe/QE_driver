@@ -3,6 +3,7 @@
 #include "socket.h"
 #include "timer.h"
 #include "types.h"
+#include <fcntl.h>
 #include <qdos.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,6 +16,7 @@
 #define ERROR_MAX_RESENDS 1
 #define ERROR_SERVER_ERROR 2
 #define ERROR_SEND 3
+#define ERROR_FILE_IO 4
 
 #define GET_OK 1
 #define GET_ERROR 0
@@ -52,6 +54,7 @@ static uint8 sendbuf[600];
 static uint16 send_packet_len = 0;
 static uint8 rcvbuf[RCV_BUF_SIZE];
 static uint32 recv_len = 0;
+static uint32 total_recv_len = 0;
 static uint8 state = STATE_SEND_RRQ;
 static uint8 num_resends = 0;
 static uint8 error = ERROR_NONE;
@@ -66,6 +69,8 @@ static uint16 expected_port = 0;
 static uint16 pack_type = OP_RRQ;
 static uint16 block_no = 0;
 static uint32 sent_len = 0;
+
+static int file_bytes_written;
 
 uint16 create_rrq(QLSTR_t *file_name) {
   uint8 *buf = &sendbuf[2];
@@ -86,7 +91,7 @@ uint16 create_rrq(QLSTR_t *file_name) {
   return ++total;
 }
 
-static PT_THREAD(handle_get(QLSTR_t *file_name)) {
+static PT_THREAD(handle_get(QLSTR_t *file_name, chanid_t output_channel)) {
   PT_BEGIN(&pt);
   state = STATE_SEND_RRQ;
   /* Initial request packet goes to broadcast address, port 69 */
@@ -94,7 +99,6 @@ static PT_THREAD(handle_get(QLSTR_t *file_name)) {
   expected_port = TFTP_SERVER_PORT;
   do {
     if (STATE_SEND_RRQ == state) {
-      // send rrq
       send_packet_len = create_rrq(file_name);
       sent_len = sendto(socket, sendbuf, send_packet_len, expected_addr, expected_port);
       if(sent_len != send_packet_len) {
@@ -106,62 +110,70 @@ static PT_THREAD(handle_get(QLSTR_t *file_name)) {
       state = STATE_WAIT_FOR_DATA;
     };
     if (state == STATE_WAIT_FOR_DATA) {
-      printf("/WFD ");
+      /* printf("/WFD "); */
       timer_restart(&timer);
       PT_WAIT_UNTIL(&pt, bytes_available((SOCKET)socket) || timer_expired(&timer));
       if (bytes_available(socket)) {
 
-        printf("#R ");
+        /* printf("#R "); */
         recv_len = recvfrom(socket, rcvbuf, RCV_BUF_SIZE, remote_addr, &remote_port);
-        printf("R %ulb ", recv_len);
+        /* printf("R %ulb ", recv_len); */
 
         if (recv_len < MIN_DATA_PACK_SIZE) {
-          printf(" XUMX ");
+          /* printf(" XUMX "); */
           continue;
         }
         /* Ignore packets from wrong host/port combination after initial DATA */
         /* packet */
         if (expected_block > 1 && !(*((uint32 *)expected_addr) == *((uint32 *)remote_addr) && expected_port == remote_port)) {
-          printf(" XWHX ");
+          /* printf(" XWHX "); */
           continue;
         }
         // Check packet type
         pack_type = ((uint16 *)rcvbuf)[0];
         if (OP_ERROR == pack_type) {
           error = ERROR_SERVER_ERROR;
-          printf("\nErrormsg: %s\n", &(rcvbuf[4]));
+          /* printf("\nErrormsg: %s\n", &(rcvbuf[4])); */
           PT_EXIT(&pt);
         }
         if (OP_DATA != pack_type) {
           // Ignore non-data/error packets
-          printf(" XWPX ");
+          /* printf(" XWPX "); */
           continue;
         }
         // Verify block #
         block_no = ((uint16 *)rcvbuf)[1];
-        printf("P %db ", block_no);
+        /* printf("P %db ", block_no); */
         if (block_no != expected_block) {
           // Ignore out of sequence & duplicate packets
           if( block_no != (expected_block - 1) ) {
-            printf(" _WB_ ");
+            /* printf(" _WB_ "); */
             continue;
           }
         } else {
           if (expected_block == 1) {
-            printf("\nSwitch to %d.%d.%d.%d %d\n", remote_addr[0],
-                   remote_addr[1], remote_addr[2], remote_addr[3],remote_port);
+            /* printf("\nSwitch to %d.%d.%d.%d %d\n", remote_addr[0], remote_addr[1], remote_addr[2], remote_addr[3],remote_port); */
             expected_port = remote_port;
             *((uint32 *)expected_addr) = *((uint32 *)remote_addr);
           }
-          expected_block++;
           // TODO: save data
           // Write to output channel
-          printf("> %ul. NB %d ", recv_len-4, expected_block );
+          /* printf("> %ul. NB %d ", recv_len-4, expected_block ); */
+          /* Start from byte 5 to skip over data block header */
+          file_bytes_written = io_sstrg(output_channel, (timeout_t)-1, (void *)(&rcvbuf[4]), recv_len-4);
+          expected_block++;
+          total_recv_len += file_bytes_written;
+          /* printf("IOW %d ", file_bytes_written); */
+          if (file_bytes_written < 0) {
+            error = ERROR_FILE_IO;
+            ut_err0(file_bytes_written);
+            PT_EXIT(&pt);
+          }
         }
         num_resends = 0;
         state = STATE_SEND_ACK;
       } else {
-        printf("TO %d ", num_resends);
+        /* printf("TO %d ", num_resends); */
         // No data available on socket so we timed out waiting for packet
         num_resends++;
         if (num_resends++ > MAX_RESENDS) {
@@ -175,7 +187,7 @@ static PT_THREAD(handle_get(QLSTR_t *file_name)) {
         // Verify amount of data
         state = FULL_PACKET_SIZE > recv_len ? STATE_RECEIVE_COMPLETE : STATE_WAIT_FOR_DATA;
         // Send ACK packet
-        printf("A %d. ",block_no);
+        /* printf("A %d. ",block_no); */
         ((uint16 *)sendbuf)[0] = OP_ACK;
         ((uint16 *)sendbuf)[1] = block_no;
         sent_len = sendto(socket, sendbuf, ACK_PACKET_SIZE, expected_addr, expected_port);
@@ -190,27 +202,46 @@ static PT_THREAD(handle_get(QLSTR_t *file_name)) {
   PT_END(&pt);
 }
 
-int tftp_get(QLSTR_t *file_name) {
+int tftp_get(QLSTR_t *file_name, char *destination) {
+  int ret = GET_OK, fd;
   uint8 pt_status;
-  // verify file name len > 0 and < ??
+  chanid_t output_channel;
+  char c_file_name[65];
+  char device_file_name[100];
+  // TODO: verify file name len > 0 and < ??
+  qlstr_to_c( c_file_name, file_name );
+  device_file_name[0]=0;
+  strcat(device_file_name, destination);
+  strcat(device_file_name, c_file_name);
+  printf("Opening file %s\n", device_file_name);
+  output_channel = io_open(device_file_name, NEW_OVER);
+  /* fd = opene(device_file_name, NEW_OVER, 0); */
+  /* if( fd < 0 ) { */
+  /*   printf("Error opening file : %d\n", fd); */
+  /*   return fd; */
+  /* } */
+  /* output_channel = getchid(fd); */
+  /* printf("Opened channel : %d\n", output_channel); */
+  if(output_channel < 0) return output_channel; /* QDOS error in channel # */
   PT_INIT(&pt);
   do {
-    pt_status = handle_get(file_name);
-    printf(" S%d ",state);
+    pt_status = handle_get(file_name,output_channel);
     if (PT_EXITED == pt_status) {
       printf("\nGet returned %d\n", error);
       // TODO: print the error code and possible error message from server
-      return GET_ERROR;
+      ret = GET_ERROR;
+      break;
     }
   } while (PT_ENDED != pt_status);
-  return GET_OK;
+  io_close(output_channel);
+  return ret;
 }
 
 int main(int ac, char **av) {
   QLSTR_DEF(fname, 256);
-  int i;
-  if (ac != 2 || strlen(av[1]) > 255 ) {
-    printf("Usage: tftp file_name\n");
+  int i,status;
+  if (ac != 3 || strlen(av[1]) > 255 ) {
+    printf("Usage: tftp file_name destination\n");
     exit(-1);
   }
   srand((unsigned int)mt_rclck());
@@ -218,6 +249,10 @@ int main(int ac, char **av) {
   printf("Using source port %ud\n", src_port);
   open_socket(socket, Sn_MR_UDP, src_port, 0);
   cstr_to_ql((QLSTR_t *)&(fname), av[1]);
-  tftp_get((QLSTR_t *)&fname);
+  status = tftp_get((QLSTR_t *)&fname, av[2]);
+  if(status < 0) {
+    ut_err0(status);
+  }
+  printf("Received a total of %d bytes.", total_recv_len);
   socket_close(socket);
 }

@@ -3,6 +3,6 @@
 
 #include <qdos.h>
 
-int tftp_get( QLSTR_t * );
+int tftp_get( QLSTR_t *, char * );
 
 #endif /* __TFTP_H__ */
