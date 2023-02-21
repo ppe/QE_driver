@@ -28,7 +28,7 @@ $(TFTP_EXE): $(TFTP_OBJS)
 	@grep "Undefined Symbol:" $(addsuffix .MAP,$@) || true
 .PHONY: clean
 clean:
-	$(RM) -f *.o *.MAP $(DRIVER_BIN) $(DHCPC_EXE) $(DHCP_EXT)
+	$(RM) -f *.o *.MAP $(DRIVER_BIN) $(DHCPC_EXE) $(DHCP_EXT) $(TFTP_EXE)
 
 depend: .depend
 
