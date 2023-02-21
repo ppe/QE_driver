@@ -14,12 +14,16 @@ SRCS = dhcpext.c heap.c clock-arch.c timer.c chan_ops.c debug.c dhcpc.c dhcpc_ma
 all: $(DRIVER_BIN) $(DHCPC_EXE) $(DHCP_EXT) $(TFTP_EXE)
 $(DRIVER_BIN): $(DRIVER_OBJS)
 	$(CC) -o $(DRIVER_BIN) -Wl,-ms -Wl,-screspr.o $(DRIVER_OBJS) -lgcc
+	@grep "Undefined Symbol:" $(addsuffix .MAP,$@) || true
 $(DHCPC_EXE): $(DHCPC_OBJS)
 	$(CC) -o $(DHCPC_EXE) -Wl,-ms $(DHCPC_OBJS) -lgcc
+	@grep "Undefined Symbol:" $(addsuffix .MAP,$@) || true
 $(DHCP_EXT): $(DHCPEXT_OBJS)
 	$(CC) -o $(DHCP_EXT) -Wl,-ms -Wl,-screspr.o $(DHCPEXT_OBJS) -lgcc
+	@grep "Undefined Symbol:" $(addsuffix .MAP,$@) || true
 $(TFTP_EXE): $(TFTP_OBJS)
 	$(CC) -o $(TFTP_EXE) -Wl,-ms $(TFTP_OBJS) -lgcc
+	@grep "Undefined Symbol:" $(addsuffix .MAP,$@) || true
 .PHONY: clean
 clean:
 	$(RM) -f *.o *.MAP $(DRIVER_BIN) $(DHCPC_EXE) $(DHCP_EXT)
