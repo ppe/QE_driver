@@ -11,7 +11,7 @@ DHCPC_EXE = dhcpc_exe
 DHCP_EXT = dhcp_cde
 TFTP_EXE = tftp
 SRCS = dhcpext.c heap.c clock-arch.c timer.c chan_ops.c debug.c dhcpc.c dhcpc_main.c resolv.c socket.c qedrv.c w5300.c tftp.c
-all: $(DRIVER_BIN) $(DHCPC_EXE) $(DHCP_EXT)
+all: $(DRIVER_BIN) $(DHCPC_EXE) $(DHCP_EXT) $(TFTP_EXE)
 $(DRIVER_BIN): $(DRIVER_OBJS)
 	$(CC) -o $(DRIVER_BIN) -Wl,-ms -Wl,-screspr.o $(DRIVER_OBJS) -lgcc
 $(DHCPC_EXE): $(DHCPC_OBJS)
