@@ -15,12 +15,14 @@ all: $(DRIVER_BIN) $(DHCPC_EXE) $(DHCP_EXT) $(TFTP_EXE)
 $(DRIVER_BIN): $(DRIVER_OBJS)
 	$(CC) -o $(DRIVER_BIN) -Wl,-ms -Wl,-screspr.o $(DRIVER_OBJS) -lgcc
 	@grep "Undefined Symbol:" $(addsuffix .MAP,$@) || true
+	@printf "+%d" 0x`tail -c 4 $@ | xxd -l 32 -p|sed 's/^0*//'` | xargs -I X truncate -s X $@
 $(DHCPC_EXE): $(DHCPC_OBJS)
 	$(CC) -o $(DHCPC_EXE) -Wl,-ms $(DHCPC_OBJS) -lgcc
 	@grep "Undefined Symbol:" $(addsuffix .MAP,$@) || true
 $(DHCP_EXT): $(DHCPEXT_OBJS)
 	$(CC) -o $(DHCP_EXT) -Wl,-ms -Wl,-screspr.o $(DHCPEXT_OBJS) -lgcc
 	@grep "Undefined Symbol:" $(addsuffix .MAP,$@) || true
+	@printf "+%d" 0x`tail -c 4 $@ | xxd -l 32 -p|sed 's/^0*//'` | xargs -I X truncate -s X $@
 $(TFTP_EXE): $(TFTP_OBJS)
 	$(CC) -o $(TFTP_EXE) -Wl,-ms $(TFTP_OBJS) -lgcc
 	@grep "Undefined Symbol:" $(addsuffix .MAP,$@) || true
