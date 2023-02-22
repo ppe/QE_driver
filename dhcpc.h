@@ -43,7 +43,7 @@ struct dhcpc_state {
   int conn;
   struct timer timer;
   u16_t ticks;
-  const void *mac_addr;
+  u8_t mac_addr[6];
   int mac_len;
   
   u8_t serverid[4];
