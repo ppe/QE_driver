@@ -47,7 +47,7 @@ struct pt pt;
 struct timer timer;
 
 const SOCKET socket = (SOCKET)0;
-const char *mode_octet = "octet";
+char *mode_octet = "octet";
 
 static uint16 src_port; /* Source port of this client */
 static uint8 sendbuf[600];
