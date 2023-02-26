@@ -31,6 +31,8 @@
 #include "socket.h"
 #include "heap.h"
 #include "debug.h"
+#include "w5300-access.h"
+#include "w5300-regs.h"
 
 /**
  * Variable for temporary source port number
@@ -444,7 +446,7 @@ uint32   sendto(SOCKET s, uint8 * buf, uint32 len, uint8 * addr, uint16 port) {
 
 uint32   recvfrom(SOCKET s, uint8 * buf, uint32 len, uint8 * addr, uint16  *port)
 {
-   static uint16 head[4];
+   static uint16 head[4] __attribute__((aligned(2)));
    static uint32 data_len;
    static uint16 crc[2];
 
@@ -456,18 +458,11 @@ uint32   recvfrom(SOCKET s, uint8 * buf, uint32 len, uint8 * addr, uint16  *port
 
    if ( len > 0 )
    {
-      switch (IINCHIP_READ(Sn_MR(s)) & 0x07)       /* check the mode of s-th SOCKET */
-      {                                            /* ----------------------------- */
-         case Sn_MR_UDP :                          /* UDP mode  */
-            wiz_read_buf(s, (uint8*)head, 8);      /* extract the PACKET-INFO */
+      switch (w5300_read_reg16(W5300_Sn_MR(s)) & W5300_Sn_MR_MODE_MASK) {
+         case W5300_Sn_MR_UDP:
+            /* extract PACKET-INFO */
+            w5300_read_fifo(s, head, 8);
             /* read peer's IP address, port number. */
-            if(*((vuint16*)MR) & MR_FS)            /* check FIFO swap bit */
-            {
-               head[0] = ((((head[0] << 8 ) & 0xFF00)) | ((head[0] >> 8)& 0x00FF));
-               head[1] = ((((head[1] << 8 ) & 0xFF00)) | ((head[1] >> 8)& 0x00FF));
-               head[2] = ((((head[2] << 8 ) & 0xFF00)) | ((head[2] >> 8)& 0x00FF));
-               head[3] = ((((head[3] << 8 ) & 0xFF00)) | ((head[3] >> 8)& 0x00FF));
-            }
             addr[0] = (uint8)(head[0] >> 8);       /* destination IP address */
             addr[1] = (uint8)head[0];
             addr[2] = (uint8)(head[1]>>8);
@@ -482,17 +477,12 @@ uint32   recvfrom(SOCKET s, uint8 * buf, uint32 len, uint8 * addr, uint16  *port
                printf("source IP : %d.%d.%d.%d\r\n", addr[0], addr[1], addr[2], addr[3]);
             #endif
 
-            wiz_read_buf(s, buf, data_len);        /* data copy. */
+            /* data copy. */
+            w5300_read_fifo(s, (uint16 *)buf, data_len);
             break;
-                                                   /* ----------------------- */
-         case Sn_MR_IPRAW :                        /* IPRAW mode */
-            wiz_read_buf(s, (uint8*)head, 6);      /* extract the PACKET-INFO  */
-            if(*((vuint16*)MR) & MR_FS)            /* check FIFO swap bit */
-            {
-               head[0] = ((((head[0] << 8 ) & 0xFF00)) | ((head[0] >> 8)& 0x00FF));
-               head[1] = ((((head[1] << 8 ) & 0xFF00)) | ((head[1] >> 8)& 0x00FF));
-               head[2] = ((((head[2] << 8 ) & 0xFF00)) | ((head[2] >> 8)& 0x00FF));
-            }
+         case Sn_MR_IPRAW :
+            /* extract PACKET-INFO */
+            w5300_read_fifo(s, head, 8);
             addr[0] = (uint8)(head[0] >> 8);       /* destination IP address */
             addr[1] = (uint8)head[0];
             addr[2] = (uint8)(head[1]>>8);
@@ -504,22 +494,20 @@ uint32   recvfrom(SOCKET s, uint8 * buf, uint32 len, uint8 * addr, uint16  *port
                printf("source IP : %d.%d.%d.%d\r\n", addr[0], addr[1], addr[2], addr[3]);
             #endif
 
-            wiz_read_buf(s, buf, data_len);        /* data copy. */
+            /* data copy. */
+            w5300_read_fifo(s, (uint16 *)buf, data_len);
             break;
-                                                   /* ----------------------- */
-         case Sn_MR_MACRAW :                       /* MACRAW mode */
-            wiz_read_buf(s,(uint8*)head,2);        /* extract the PACKET-INFO */
-            if(*((vuint16*)MR) & MR_FS)            /* check FIFO swap bit */
-               head[0] = ((((head[0] << 8 ) & 0xFF00)) | ((head[0] >> 8)& 0x00FF));
+         case Sn_MR_MACRAW :
+            /* extract PACKET-INFO */
+            w5300_read_fifo(s, head, 2);
             data_len = (uint32)head[0];            /* DATA packet length */
-            wiz_read_buf(s, buf, data_len);        /* data copy. */
-            wiz_read_buf(s,(uint8*)crc, 4);        /* extract CRC data and ignore it. */
-
+            w5300_read_fifo(s, (uint16 *)buf, data_len);
+            w5300_read_fifo(s, crc, 4);
             break;
          default :
             break;
       }
-      setSn_CR(s,Sn_CR_RECV);                      /* recv */
+      w5300_write_reg16(W5300_Sn_CR(s), Sn_CR_RECV);
    }
    #ifdef __DEF_IINCHIP_DBG__
       printf("recvfrom() end ..\r\n");

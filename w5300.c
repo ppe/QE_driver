@@ -607,6 +607,9 @@ uint8    sysinit(uint8* tx_size, uint8* rx_size)
       return 0;
    }
 
+   if(w5300_set_base_address() < 0) {
+     return 0;
+   }
    IINCHIP_WRITE(TMS01R,((uint16)tx_size[0] << 8) + (uint16)tx_size[1]);
    IINCHIP_WRITE(TMS23R,((uint16)tx_size[2] << 8) + (uint16)tx_size[3]);
    IINCHIP_WRITE(TMS45R,((uint16)tx_size[4] << 8) + (uint16)tx_size[5]);

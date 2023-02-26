@@ -77,6 +77,7 @@
 #define W5300_Sn_MR_IPRAW     0x03                 /**< Protocol bits of Sn_MR. */
 #define W5300_Sn_MR_MACRAW    0x04                 /**< Protocol bits of Sn_MR. */
 #define W5300_Sn_MR_PPPoE     0x05                 /**< Protocol bits of Sn_MR. */
+#define W5300_Sn_MR_MODE_MASK 0x07                 /* And mask to extract protocol mode */
 
 #define W5300_Sn_CR(n)        (W5300_SOCKET_REG_BASE + n * W5300_SOCKET_REG_SIZE + 0x02)
 #define W5300_Sn_CR_OPEN      0x01                 /**< OPEN command value of Sn_CR. */

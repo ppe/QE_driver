@@ -99,7 +99,7 @@ struct dhcp_msg {
 
 static const u8_t xid[4] = {0xad, 0xde, 0x12, 0x23};
 static const u8_t magic_cookie[4] = {99, 130, 83, 99};
-static u8_t dhcpc_msg_buf[MSG_BUF_SIZE];
+static u8_t dhcpc_msg_buf[MSG_BUF_SIZE] __attribute__((aligned(2)));
 static QL_LINK_t dhcpc_poll_task_link;
 uint8 broadcast_addr[4] = {255, 255, 255, 255};
 

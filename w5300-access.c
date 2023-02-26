@@ -2,6 +2,7 @@
  * SPDX: MIT
  */
 #include "w5300-access.h"
+#include "w5300-regs.h"
 #include "types.h"
 
 uint32 w5300_base_addr;
@@ -28,4 +29,17 @@ uint16 w5300_read_reg16(uint16 reg) {
 
 int w5300_read_buf(uint16 reg, uint8 *buffer, uint8 size) {
 
+}
+
+void w5300_read_fifo(SOCKET s, uint16 *buffer, uint16 size) {
+  uint32 i;
+  uint32 words_to_read = 0;
+  if (size & 1) {
+    words_to_read = (size >> 1) + 1;
+  } else {
+    words_to_read = size >> 1;
+  }
+  for (i = 0; i < words_to_read; i++) {
+    buffer[i] = w5300_read_reg16(W5300_Sn_RX_FIFOR(s));
+  }
 }
