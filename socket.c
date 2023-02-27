@@ -104,49 +104,26 @@ void socket_close(SOCKET s) {
    w5300_write_reg16(W5300_Sn_CR(s), W5300_Sn_CR_CLOSE);
 }
 
-uint8    connect(SOCKET s, uint8 * addr, uint16 port)
-{
+uint8 connect(SOCKET s, uint8 * addr, uint16 port) {
    uint16 socket_status = 0;
-   if
-   (
-      ((addr[0] == 0xFF) && (addr[1] == 0xFF) && (addr[2] == 0xFF) && (addr[3] == 0xFF)) ||
-      ((addr[0] == 0x00) && (addr[1] == 0x00) && (addr[2] == 0x00) && (addr[3] == 0x00)) ||
-      (port == 0x00)
-   )
-   {
-      #ifdef __DEF_IINCHIP_DBG__
-         printf("%d : Fail[invalid ip,port] %u.%u.%u.%u:%u\r\n",s,addr[0],addr[1],addr[2],addr[3],port);
-      #endif
-      return 0;
-   }
 
-   /* set destination IP  */
-   IINCHIP_WRITE(Sn_DIPR(s),((uint16)addr[0]<<8)+(uint16)addr[1]);
-   IINCHIP_WRITE(Sn_DIPR2(s),((uint16)addr[2]<<8)+(uint16)addr[3]);
-   /* set destination port number */
-   IINCHIP_WRITE(Sn_DPORTR(s),port);
-
-   /* Connect */
-   setSn_CR(s,Sn_CR_CONNECT);
-   while(getSn_CR(s) != 0 ); /* Wait for w5300 to ack cmd by clearing the CR */
+   if (((uint32)addr == 0xFFFFFFFF) || ((uint32)addr == 0) || (port == 0x00)) { return 0; }
+   w5300_write_reg32(W5300_Sn_DIPR(s), *((uint32 *)addr));
+   w5300_write_reg16(W5300_Sn_DPORTR(s), port);
+   w5300_write_reg16(W5300_Sn_CR(s), W5300_Sn_CR_CONNECT);
+   /* TODO: timeout to prevent possible eternal busy loop? */
+   while(w5300_read_reg16(W5300_Sn_CR(s)));
    do {
-      socket_status = getSn_SSR(s);
+      socket_status = w5300_read_reg16(W5300_Sn_SSR(s));
    } while (socket_status != SOCK_CLOSED && socket_status != SOCK_ESTABLISHED && socket_status != SOCK_FIN_WAIT);
-   #ifdef __DEF_IINCHIP_DBG__
-            printf("%d: connect()\n",s);
-            printf("%d: Sn_MR=0x%04x,Sn_PORTR=0x%04x(%d),Sn_SSR=%04x\r\n",s,IINCHIP_READ(Sn_MR(s)),IINCHIP_READ(Sn_PORTR(s)),IINCHIP_READ(Sn_PORTR(s)),getSn_SSR(s));
-            printf("%d: ip=%8x\n",s,*((uint32*)addr));
-            printf("%d: port=%d\n",s,port);
-   #endif
-
    return 1;
 }
 
-void     disconnect(SOCKET s)
-{
-   if((getSn_MR(s)& 0x0F) != Sn_MR_TCP) {return;};
-   setSn_CR(s,Sn_CR_DISCON);
-   while(getSn_CR(s));
+void disconnect(SOCKET s) {
+   if((w5300_read_reg16(W5300_Sn_MR(s)) & W5300_Sn_MR_MODE_MASK) != W5300_Sn_MR_TCP) { return; }
+   w5300_write_reg16(W5300_Sn_CR(s), W5300_Sn_CR_DISCON);
+   /* TODO: timeout to prevent possible eternal busy loop? */
+   while(w5300_read_reg16(W5300_Sn_CR(s)));
 }
 
 uint8    listen(SOCKET s)
