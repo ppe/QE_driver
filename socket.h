@@ -31,7 +31,6 @@
 #include <stdlib.h>
 
 #include "types.h"
-#include "w5300.h"
 
 /**********************************
  * define function of SOCKET APIs * 
@@ -50,6 +49,8 @@ Linux socket compatibility recv flags
 
 #define TCP_MAX_MTU 1500
 #define MAX_WAIT_CYCLES 100
+#define MAX_SOCK_NUM 8
+
 extern char *recv_buf[];
 extern int tcp_pack_remain[];
 extern int tcp_pack_size[];

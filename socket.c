@@ -115,7 +115,9 @@ uint8 connect(SOCKET s, uint8 * addr, uint16 port) {
    while(w5300_read_reg16(W5300_Sn_CR(s)));
    do {
       socket_status = w5300_read_reg16(W5300_Sn_SSR(s));
-   } while (socket_status != SOCK_CLOSED && socket_status != SOCK_ESTABLISHED && socket_status != SOCK_FIN_WAIT);
+   } while (socket_status != W5300_SOCK_CLOSED &&
+            socket_status != W5300_SOCK_ESTABLISHED &&
+            socket_status != W5300_SOCK_FIN_WAIT);
    return 1;
 }
 
@@ -126,23 +128,13 @@ void disconnect(SOCKET s) {
    while(w5300_read_reg16(W5300_Sn_CR(s)));
 }
 
-uint8    listen(SOCKET s)
-{
-   if (getSn_SSR(s) != SOCK_INIT)
-   {
-      #ifdef __DEF_IINCHIP_DBG__
-         printf("%d : SOCKET is not created!\r\n",s);
-      #endif
-      return 0;
-   }
-
-   setSn_CR(s,Sn_CR_LISTEN);     /* listen */
-
-   return 1;
+uint8 listen(SOCKET s) {
+  if (w5300_read_reg16(W5300_Sn_SSR(s)) != W5300_SOCK_INIT) { return 0; }
+  w5300_write_reg16(W5300_Sn_CR(s), W5300_Sn_CR_LISTEN);
+  return 1;
 }
 
-int32   socket_send(int s, uint8 * buf, uint32 len)
-{
+int32 socket_send(int s, uint8 * buf, uint32 len) {
     static uint8 status=0;
     static uint32 ret=0;
     static uint32 freesize=0;
@@ -153,74 +145,26 @@ int32   socket_send(int s, uint8 * buf, uint32 len)
    /* if (len > getIINCHIP_TxMAX(s)) ret = getIINCHIP_TxMAX(s); /\* check size not to exceed MAX size. *\/ */
    TRACE(("%d : freesize=%ld,status=%04x\n",s,freesize,status));
    TRACE(("%d:Send Size=%08lx(%d)\n",s,ret,ret));
-   TRACE(("MR=%04x\r\n",*((vuint16*)MR)));
-
-   /*
-    * \note if you want to use non blocking function, <b>"do{}while(freesize < ret)"</b> code block
-    * can be replaced with the below code. \n
-    * \code
-    *       while((freesize = getSn_TX_FSR(s))==0);
-    *       ret = freesize;
-    * \endcode
-    */
-   /* ----------------------- */
-   /* NOTE : CODE BLOCK START */
-   while((freesize = getSn_TX_FSR(s))==0);
+   /* TODO: non-blocking version */
+   while((freesize = w5300_read_reg32(W5300_Sn_TX_FSR(s))) ==0 );
    if( ret > freesize ) {
        ret = freesize;
    }
-   /* do */
-   /* { */
-   /*    freesize = getSn_TX_FSR(s); */
-   /*    status = getSn_SSR(s); */
-   /*    TRACE(("%d : freesize=%ld\n",s,freesize)); */
-   /*       if(loopcnt++ > 0x0010000) */
-   /*       /\* { *\/ */
-   /*       /\*    printf("%d : freesize=%ld,status=%04x\n",s,freesize,status); *\/ */
-   /*       /\*    printf("%d:Send Size=%08lx(%d)\n",s,ret,ret); *\/ */
-   /*       /\*    printf("MR=%04x\r\n",*((vuint16*)MR)); *\/ */
-   /*       /\*    loopcnt = 0; *\/ */
-   /*       /\* } *\/ */
-   /*           if ((status != SOCK_ESTABLISHED) && (status != SOCK_CLOSE_WAIT)) { */
-   /*               TRACE(("Wrong socket state: %d\n", status)); */
-   /*               return 0; */
-   /*           }; */
-   /* } while (freesize < ret); */
-   /* NOTE : CODE BLOCK END */
-   /* --------------------- */
-
+   /* TODO: Check socket state ESTABLISHED/CLOSE_WAIT/?? */
    TRACE(("%d : write %d bytes\n", s, ret));
-   wiz_write_buf(s,buf,ret);                 /* copy data */
-
-   if(!check_sendok_flag[s])                 /* if first send, skip. */
-   {
-      while (!(getSn_IR(s) & Sn_IR_SENDOK))  /* wait previous SEND command completion. */
-      {
-      /* #ifdef __DEF_IINCHIP_DBG__ */
-
-      /*    if(loopcnt++ > 0x010000) */
-      /*    { */
-      /*       printf("%d:Sn_SSR(%04x)\r\n",s,status); */
-      /*       printf("%d:Send Size=%08lx(%d)\r\n",s,ret,ret); */
-      /*       printf("MR=%04x\r\n",*((vuint16*)MR)); */
-      /*       loopcnt = 0; */
-      /*    } */
-      /* #endif */
-         if (getSn_SSR(s) == SOCK_CLOSED)    /* check timeout or abnormal closed. */
-         {
-            /* #ifdef __DEF_IINCHIP_DBG__ */
-            /*    printf("%d : Send Fail. SOCK_CLOSED.\r\n",s); */
-            /* #endif */
+   w5300_write_fifo(s, (uint16 *)buf, ret);
+   if(!check_sendok_flag[s]) { /* if first send, skip. */
+      while (!(w5300_read_reg16(W5300_Sn_IR(s)) & W5300_Sn_IR_SENDOK)) { /* wait previous SEND command completion. */
+         if (w5300_read_reg16(W5300_Sn_SSR(s)) == W5300_SOCK_CLOSED) { /* check timeout or abnormal closed. */ 
             return -1;
          }
       }
-      setSn_IR(s, Sn_IR_SENDOK);             /* clear Sn_IR_SENDOK	 */
+      w5300_write_reg16(W5300_Sn_IR(s), W5300_Sn_IR_SENDOK);
    }
    else check_sendok_flag[s] = 0;
 
-   /* send */
-   setSn_TX_WRSR(s,ret);
-   setSn_CR(s,Sn_CR_SEND);
+   w5300_write_reg32(W5300_Sn_TX_WRSR(s), ret);
+   w5300_write_reg16(W5300_Sn_CR(s), W5300_Sn_CR_SEND);
    return ret;
 }
 
@@ -248,7 +192,7 @@ void initialize_peek_cache( struct peek_cache_entry *cache, uint8 num_elements )
 }
 
 int32 socket_recv(SOCKET sock, char* buf ) {
-    register uint8 sock_status;
+    register uint16 sock_status;
     register uint16 wait_cycles;
     register uint32 fifo_addr;
     register int i;
@@ -266,86 +210,73 @@ int32 socket_recv(SOCKET sock, char* buf ) {
     if( tcp_pack_remain[i] > 0 ) {
         to_recv = tcp_pack_remain[i] > TCP_MAX_MTU ? TCP_MAX_MTU : tcp_pack_remain[i];
         tcp_pack_remain[i] -= to_recv;
-        /* PRINTB0('+'); */
-        /* ut_mint((chanid_t)0,tcp_pack_remain[i]); */
     } else {
-        sock_status = GetSn_SSR(sock);
-        fifo_addr = Sn_RX_FIFOR(sock);
-        while ((bytes_available = getSn_RX_RSR(sock)) == 0
-               && (sock_status != SOCK_CLOSED)
-               && (sock_status != SOCK_CLOSE_WAIT)) {
-            if( ++wait_cycles > MAX_WAIT_CYCLES ) {
-                return -1;
-            }
-            wait_10ms(1);
-            sock_status = GetSn_SSR(sock);
-        }
-        dev_pack_size = IINCHIP_READ(fifo_addr);
-        /* PRINTB0('%'); */
-        /* ut_mint((chanid_t)0,dev_pack_size); */
-        if( dev_pack_size > TCP_MAX_MTU ) {
-            to_recv = TCP_MAX_MTU;
-            tcp_pack_remain[i] = dev_pack_size - to_recv;
-        } else {
-            to_recv = dev_pack_size;
-            tcp_pack_remain[i] = 0;
-        }
-        /* PRINTB0('#'); */
-        /* ut_mint((chanid_t)0,tcp_pack_remain[i]); */
+
+      sock_status = w5300_read_reg16(W5300_Sn_SSR(sock));
+      fifo_addr = W5300_Sn_RX_FIFOR(sock);
+      while ((bytes_available = w5300_read_reg32(W5300_Sn_RX_RSR(sock)) == 0)
+              && (sock_status != W5300_SOCK_CLOSED)
+              && (sock_status != W5300_SOCK_CLOSE_WAIT)) {
+          if( ++wait_cycles > MAX_WAIT_CYCLES ) {
+              return -1;
+          }
+          wait_10ms(1);
+          sock_status = w5300_read_reg16(W5300_Sn_SSR(sock));
+      }
+      dev_pack_size = w5300_read_reg16(fifo_addr);
+      if( dev_pack_size > TCP_MAX_MTU ) {
+          to_recv = TCP_MAX_MTU;
+          tcp_pack_remain[i] = dev_pack_size - to_recv;
+      } else {
+          to_recv = dev_pack_size;
+          tcp_pack_remain[i] = 0;
+      }
     }
     tcp_pack_size[i] = to_recv;
     tcp_pack_remain[i] = tcp_pack_size[i];
-    /* PRINTB0('+'); */
-    /* ut_mint((chanid_t)0,tcp_pack_size); */
-    /* PRINTB0('+'); */
-    /* PRINTB0(tcp_buf[0]); */
     asm volatile ( "
- movea.l %0,a0
- movea.l %1,a1
- moveq.l #0,d0
- moveq.l #0,d1
- move.w  %2,d0
- lsr.w   #1,d0
- addx.w  d1,d0
+  movea.l %0,a0
+  movea.l %1,a1
+  moveq.l #0,d0
+  moveq.l #0,d1
+  move.w  %2,d0
+  lsr.w   #1,d0
+  addx.w  d1,d0
 unroll_start:
- cmpi.w  #20,d0
- blt     copy_loop_end
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- move.w  (a0),(a1)+
- sub.w   #19,d0
- dbra    d0,unroll_start
- bra     copy_loop_end
+  cmpi.w  #20,d0
+  blt     copy_loop_end
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  move.w  (a0),(a1)+
+  sub.w   #19,d0
+  dbra    d0,unroll_start
+  bra     copy_loop_end
 copy_loop: move.w  (a0),(a1)+
 copy_loop_end: dbra    d0,copy_loop
          " :
            : "a" (fifo_addr), "a" (buf), "d" (tcp_pack_size[i])
            : "a0", "a1", "d0", "d1"
         );
-    /* PRINTB0('+'); */
-    /* PRINTB0(tcp_buf[0]); */
-    if( !tcp_pack_remain[i] > 0 ) {
-        /* PRINTB0('<'); */
-        /* PRINTB0(10); */
-        setSn_CR(sock,Sn_CR_RECV);
-        while(getSn_CR(sock) != 0); /* Wait for w5300 to ack cmd by clearing the CR */
+    if( !(tcp_pack_remain[i] > 0) ) {
+      w5300_write_reg16(W5300_Sn_CR(sock), W5300_Sn_CR_RECV);
+      while(w5300_read_reg16(W5300_Sn_CR(sock)));
     }
     return tcp_pack_size[i];
 }
@@ -410,7 +341,7 @@ uint32   recvfrom(SOCKET s, uint8 * buf, uint32 len, uint8 * addr, uint16  *port
          default :
             break;
       }
-      w5300_write_reg16(W5300_Sn_CR(s), Sn_CR_RECV);
+      w5300_write_reg16(W5300_Sn_CR(s), W5300_Sn_CR_RECV);
    }
    TRACE(("recvfrom() end ..\n"));
    return data_len;
