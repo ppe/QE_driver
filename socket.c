@@ -383,37 +383,19 @@ uint32   sendto(SOCKET s, uint8 * buf, uint32 len, uint8 * addr, uint16 port) {
    uint8 status=0;
    uint8 isr=0;
    uint32 ret=0;
-
-   TRACE(("Sendto buf %08x\n",buf));
    TRACE(("%d : sendto():%d.%d.%d.%d(%d), len=%d\n",s, addr[0], addr[1], addr[2], addr[3] , port, len));
-   #ifdef __DEF_IINCHIP_DBG__
-      printf("%d : sendto():%d.%d.%d.%d(%d), len=%d\r\n",s, addr[0], addr[1], addr[2], addr[3] , port, len);
-   #endif
-
    if (((addr[0] == 0x00) && (addr[1] == 0x00) && (addr[2] == 0x00) && (addr[3] == 0x00)) ||
-      ((port == 0x00)) ||(len == 0))
-   {
+      ((port == 0x00)) ||(len == 0)) {
        TRACE(("%d : Fail[%d.%d.%d.%d, %.d, %d]\n",s, addr[0], addr[1], addr[2], addr[3] , port, len));
-      #ifdef __DEF_IINCHIP_DBG__
-         printf("%d : Fail[%d.%d.%d.%d, %.d, %d]\r\n",s, addr[0], addr[1], addr[2], addr[3] , port, len);
-      #endif
       return 0;
    }
-
-
    /* if (len > getIINCHIP_TxMAX(s)) { ret = getIINCHIP_TxMAX(s); } /\* check size not to exceed MAX size. *\/ */
    /* else { ret = len; } */
    ret = len;
-
    TRACE(("sendto ret == %d\n", ret));
-
-   /* set destination IP address */
    w5300_write_reg32(W5300_Sn_DIPR(s), *((uint32 *)addr));
-   /* set destination port number */
    w5300_write_reg16(W5300_Sn_DPORTR(s), port);
-   /* copy data */
    w5300_write_fifo(s, (uint16 *)buf, ret);
-   /* send */
    w5300_write_reg32(W5300_Sn_TX_WRSR(s), ret);
    w5300_write_reg16(W5300_Sn_CR(s), W5300_Sn_CR_SEND);
    /* wait SEND command completion */
@@ -422,40 +404,24 @@ uint32   sendto(SOCKET s, uint8 * buf, uint32 len, uint8 * addr, uint16 port) {
       /* Sn_IR_TIMEOUT causes the decrement of Sn_TX_FSR */
       /* ----------------------------------------------- */
       status = w5300_read_reg16(W5300_Sn_SSR(s));
-      if ((status == W5300_SOCK_CLOSED) || (isr & W5300_Sn_IR_TIMEOUT))
-      {
-          TRACE(("%d: send fail.status=0x%02x,isr=%02x\r\n",s,status,isr));
-         #ifdef __DEF_IINCHIP_DBG__
-            printf("%d: send fail.status=0x%02x,isr=%02x\r\n",s,status,isr);
-         #endif
+      if ((status == W5300_SOCK_CLOSED) || (isr & W5300_Sn_IR_TIMEOUT)) {
+         TRACE(("%d: send fail.status=0x%02x,isr=%02x\n",s,status,isr));
          w5300_write_reg16(W5300_Sn_IR(s), W5300_Sn_IR_TIMEOUT);
          return 0;
       }
    }
    w5300_write_reg16(W5300_Sn_IR(s), W5300_Sn_IR_SENDOK);
-
-   TRACE(("%d : send()end ret %u\r\n",s,ret));
-   #ifdef __DEF_IINCHIP_DBG__
-      printf("%d : send()end ret %u\r\n",s,ret);
-   #endif
-
+   TRACE(("%d : send() end ret %u\n",s,ret));
    return ret;
 }
 
-uint32   recvfrom(SOCKET s, uint8 * buf, uint32 len, uint8 * addr, uint16  *port)
-{
+uint32   recvfrom(SOCKET s, uint8 * buf, uint32 len, uint8 * addr, uint16  *port) {
    static uint16 head[4] __attribute__((aligned(2)));
-   static uint32 data_len;
+   static uint32 data_len = 0;
    static uint16 crc[2];
 
-   data_len = 0;
-   TRACE(("Recvfrom buf %08x\n",buf));
-   #ifdef __DEF_IINCHIP_DBG__
-      printf("recvfrom()\r\n");
-   #endif
-
-   if ( len > 0 )
-   {
+   TRACE(("Recvfrom into buf @ %08x\n",buf));
+   if ( len > 0 ) {
       switch (w5300_read_reg16(W5300_Sn_MR(s)) & W5300_Sn_MR_MODE_MASK) {
          case W5300_Sn_MR_UDP:
             /* extract PACKET-INFO */
@@ -467,49 +433,14 @@ uint32   recvfrom(SOCKET s, uint8 * buf, uint32 len, uint8 * addr, uint16  *port
             addr[3] = (uint8)head[1];
             *port = head[2];                       /* destination port number */
             data_len = (uint32)head[3];            /* DATA packet length */
-
             TRACE(("UDP msg arrived:%d(0x%04x)\n",data_len,data_len));
-            #ifdef __DEF_IINCHIP_DBG__
-               printf("UDP msg arrived:%d(0x%04x)\r\n",data_len,data_len);
-               printf("source Port : %d\r\n", *port);
-               printf("source IP : %d.%d.%d.%d\r\n", addr[0], addr[1], addr[2], addr[3]);
-            #endif
-
-            /* data copy. */
             w5300_read_fifo(s, (uint16 *)buf, data_len);
-            break;
-         case Sn_MR_IPRAW :
-            /* extract PACKET-INFO */
-            w5300_read_fifo(s, head, 8);
-            addr[0] = (uint8)(head[0] >> 8);       /* destination IP address */
-            addr[1] = (uint8)head[0];
-            addr[2] = (uint8)(head[1]>>8);
-            addr[3] = (uint8)head[1];
-            data_len = (uint32)head[2];            /* DATA packet length */
-
-            #ifdef __DEF_IINCHIP_DBG__
-               printf("IP RAW msg arrived\r\n");
-               printf("source IP : %d.%d.%d.%d\r\n", addr[0], addr[1], addr[2], addr[3]);
-            #endif
-
-            /* data copy. */
-            w5300_read_fifo(s, (uint16 *)buf, data_len);
-            break;
-         case Sn_MR_MACRAW :
-            /* extract PACKET-INFO */
-            w5300_read_fifo(s, head, 2);
-            data_len = (uint32)head[0];            /* DATA packet length */
-            w5300_read_fifo(s, (uint16 *)buf, data_len);
-            w5300_read_fifo(s, crc, 4);
             break;
          default :
             break;
       }
       w5300_write_reg16(W5300_Sn_CR(s), Sn_CR_RECV);
    }
-   #ifdef __DEF_IINCHIP_DBG__
-      printf("recvfrom() end ..\r\n");
-   #endif
-
+   TRACE(("recvfrom() end ..\n"));
    return data_len;
 }
