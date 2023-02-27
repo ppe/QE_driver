@@ -103,7 +103,7 @@
 /**
  *  SOCKETn interrupt register
  */
-#define W5300_Sn_IR(n)        (w5300_SOCKET_REG_BASE + n * W5300_SOCKET_REG_SIZE + 0x06)
+#define W5300_Sn_IR(n)        (W5300_SOCKET_REG_BASE + n * W5300_SOCKET_REG_SIZE + 0x06)
 #define W5300_Sn_IR_PRECV     0x80                 /**< PPP receive bit of Sn_IR */
 #define W5300_Sn_IR_PFAIL     0x40                 /**< PPP fail bit of Sn_IR */
 #define W5300_Sn_IR_PNEXT     0x20                 /**< PPP next phase bit of Sn_IR */

@@ -390,11 +390,8 @@ uint32   sendto(SOCKET s, uint8 * buf, uint32 len, uint8 * addr, uint16 port) {
       printf("%d : sendto():%d.%d.%d.%d(%d), len=%d\r\n",s, addr[0], addr[1], addr[2], addr[3] , port, len);
    #endif
 
-   if
-   (
-      ((addr[0] == 0x00) && (addr[1] == 0x00) && (addr[2] == 0x00) && (addr[3] == 0x00)) ||
-      ((port == 0x00)) ||(len == 0)
-   )
+   if (((addr[0] == 0x00) && (addr[1] == 0x00) && (addr[2] == 0x00) && (addr[3] == 0x00)) ||
+      ((port == 0x00)) ||(len == 0))
    {
        TRACE(("%d : Fail[%d.%d.%d.%d, %.d, %d]\n",s, addr[0], addr[1], addr[2], addr[3] , port, len));
       #ifdef __DEF_IINCHIP_DBG__
@@ -411,30 +408,31 @@ uint32   sendto(SOCKET s, uint8 * buf, uint32 len, uint8 * addr, uint16 port) {
    TRACE(("sendto ret == %d\n", ret));
 
    /* set destination IP address */
-   IINCHIP_WRITE(Sn_DIPR(s),(((uint16)addr[0])<<8) + (uint16) addr[1]);
-   IINCHIP_WRITE(Sn_DIPR2(s),(((uint16)addr[2])<<8) + (uint16) addr[3]);
+   w5300_write_reg32(W5300_Sn_DIPR(s), *((uint32 *)addr));
    /* set destination port number */
-   IINCHIP_WRITE(Sn_DPORTR(s),port);
-
-   wiz_write_buf(s, buf, ret);                              /* copy data */
+   w5300_write_reg16(W5300_Sn_DPORTR(s), port);
+   /* copy data */
+   w5300_write_fifo(s, (uint16 *)buf, ret);
    /* send */
-   setSn_TX_WRSR(s,ret);
-   setSn_CR(s, Sn_CR_SEND);
-
-   while (!((isr = getSn_IR(s)) & Sn_IR_SENDOK))            /* wait SEND command completion */
-   {
-      status = getSn_SSR(s);                                /* warning --------------------------------------- */
-      if ((status == SOCK_CLOSED) || (isr & Sn_IR_TIMEOUT)) /* Sn_IR_TIMEOUT causes the decrement of Sn_TX_FSR */
-      {                                                     /* ----------------------------------------------- */
+   w5300_write_reg32(W5300_Sn_TX_WRSR(s), ret);
+   w5300_write_reg16(W5300_Sn_CR(s), W5300_Sn_CR_SEND);
+   /* wait SEND command completion */
+   while (!((isr = w5300_read_reg16(W5300_Sn_IR(s))) & W5300_Sn_IR_SENDOK)) {
+      /* warning --------------------------------------- */
+      /* Sn_IR_TIMEOUT causes the decrement of Sn_TX_FSR */
+      /* ----------------------------------------------- */
+      status = w5300_read_reg16(W5300_Sn_SSR(s));
+      if ((status == W5300_SOCK_CLOSED) || (isr & W5300_Sn_IR_TIMEOUT))
+      {
           TRACE(("%d: send fail.status=0x%02x,isr=%02x\r\n",s,status,isr));
          #ifdef __DEF_IINCHIP_DBG__
             printf("%d: send fail.status=0x%02x,isr=%02x\r\n",s,status,isr);
          #endif
-         setSn_IR(s,Sn_IR_TIMEOUT);
+         w5300_write_reg16(W5300_Sn_IR(s), W5300_Sn_IR_TIMEOUT);
          return 0;
       }
    }
-   setSn_IR(s, Sn_IR_SENDOK); /* Clear Sn_IR_SENDOK */
+   w5300_write_reg16(W5300_Sn_IR(s), W5300_Sn_IR_SENDOK);
 
    TRACE(("%d : send()end ret %u\r\n",s,ret));
    #ifdef __DEF_IINCHIP_DBG__
