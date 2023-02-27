@@ -51,22 +51,16 @@ int tcp_pack_size[MAX_SOCK_NUM];
 char *recv_buf_ptr[MAX_SOCK_NUM];
 
 
-uint8    open_socket(SOCKET s, uint8 protocol, uint16 port, uint16 flag)
-{
-   IINCHIP_WRITE(Sn_MR(s),(uint16)(protocol | flag)); /* set Sn_MR with protocol & flag */
-   if (port != 0) IINCHIP_WRITE(Sn_PORTR(s),port);
-   else
-   {
-      iinchip_source_port++;     /* if don't set the source port, set local_port number. */
-      IINCHIP_WRITE(Sn_PORTR(s),iinchip_source_port);
-   }
-   setSn_CR(s, Sn_CR_OPEN);      /* open s-th SOCKET  */
-
-   check_sendok_flag[s] = 1;     /* initialize the sendok flag. */
-
-   #ifdef __DEF_IINCHIP_DBG__
-      printf("%d : Sn_MR=0x%04x,Sn_PORTR=0x%04x(%d),Sn_SSR=%04x\r\n",s,IINCHIP_READ(Sn_MR(s)),IINCHIP_READ(Sn_PORTR(s)),IINCHIP_READ(Sn_PORTR(s)),getSn_SSR(s));
-   #endif
+uint8 open_socket(SOCKET s, uint8 protocol, uint16 port, uint16 flag) {
+  w5300_write_reg16(W5300_Sn_MR(s), (uint16)(protocol | flag));
+  if (port != 0) {
+    w5300_write_reg16(W5300_Sn_PORTR(s), port);
+  } else {
+    /* TODO: generate a random port >1023 that is not currently not in use */
+    w5300_write_reg16(W5300_Sn_PORTR(s), ++iinchip_source_port);
+  }
+   w5300_write_reg16(W5300_Sn_CR(s), W5300_Sn_CR_OPEN);
+   check_sendok_flag[s] = 1;
    return 1;
 }
 
@@ -74,16 +68,15 @@ void socket_drain(SOCKET s) {
     /* Drain pending input from socket */
 }
 
-uint8 is_closed( SOCKET s ) {
-    return SOCK_CLOSED == getSn_SSR( s );
+uint8 is_closed(SOCKET s) {
+    return  W5300_SOCK_CLOSED == w5300_read_reg16(W5300_Sn_SSR(s));
 }
 
-uint32 bytes_available( SOCKET s ) {
-    return getSn_RX_RSR(s);
+uint32 bytes_available(SOCKET s) {
+  return w5300_read_reg32(W5300_Sn_RX_RSR(s));
 }
 
-void socket_close(SOCKET s)
-{
+void socket_close(SOCKET s) {
    /* M_08082008 : It is fixed the problem that Sn_SSR cannot be changed a undefined value to the defined value. */
    /*              Refer to Errata of W5300 */
    /*Check if the transmit data is remained or not. */
@@ -106,8 +99,9 @@ void socket_close(SOCKET s)
    /*    } */
    /* } */
    /*////////////////////////////    */
-   setSn_IR(s ,0x00FF);          /* Clear the remained interrupt bits. */
-   setSn_CR(s ,Sn_CR_CLOSE);     /* Close s-th SOCKET      */
+  /* TODO: drain any data remaining in the output FIFO, see above code from WizNet */
+   w5300_write_reg16(W5300_Sn_IR(s), 0x00FF);
+   w5300_write_reg16(W5300_Sn_CR(s), W5300_Sn_CR_CLOSE);
 }
 
 uint8    connect(SOCKET s, uint8 * addr, uint16 port)

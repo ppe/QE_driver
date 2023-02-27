@@ -31,6 +31,10 @@ uint16 w5300_read_reg16(uint16 reg) {
     return (*(vuint16 *)(w5300_base_addr + reg));
 }
 
+uint32 w5300_read_reg32(uint32 reg) {
+    return (*(vuint32 *)(w5300_base_addr + reg));
+}
+
 int w5300_read_buf(uint16 reg, uint8 *buffer, uint8 size) {
 
 }
