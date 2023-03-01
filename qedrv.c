@@ -7,8 +7,8 @@
 #include "heap.h"
 #include "socket.h"
 #include "debug.h"
-#include "w5300.h"
 #include "w5300-access.h"
+#include "w5300-ops.h"
 #include "w5300-regs.h"
 #include "pt.h"
 #include "dhcpc.h"
@@ -63,66 +63,6 @@ static QLSTR_INIT(msg_wait_begin, "Reset wait begin...");
 static QLSTR_INIT(msg_wait_end, "end\n");
 static QLSTR_INIT(msg_dhcp_done, "DHCP configured.\n");
 
-static const uint32 possible_addr[] = {
-    0xC000,
-    0x12000,
-    0xC8000,
-    0xFC000,
-    0x4c8000,
-    0x4fc000
-};
-
-static const uint8 hexbuf[] = "0123456789ABCDEF";
-
-static int configure_W5300() {
-    int i;
-    char outbuf[8];
-    uint32 addr;
-
-    PRINT0("Probing for W5300 chip...");
-    for (i = 0; i < 6; i++) {
-        w5300_base_addr = possible_addr[i];
-        if (w5300_read_reg16(W5300_IDR) == 0x5300) {
-            break;
-        }
-    }
-
-    if (i == 6) {
-        PRINT0("NOT FOUND");
-        return -1;
-    }
-
-    addr = w5300_base_addr;
-    i = 6;
-    outbuf[7] = 0;
-
-    do{
-        outbuf[i] = hexbuf[addr % 16];
-        i--;
-        addr /= 16;
-    } while( addr > 0);
-    PRINT0(&outbuf[i+1]);
-    PRINT0("\n");
-
-    // Writing a 0 to the HW reset address resets the W5300
-    w5300_write_reg8(W5300_HW_RESET, 0);
-    PRINT0("Reset begin...");
-    wait_10ms(1); /* Wait 200ms for PLL to synchronize */
-    PRINT0("end.\n");
-
-    if(!sysinit(tx_mem_conf,rx_mem_conf))
-    {
-        PRINT0(&err_memcfg);
-        return -1;
-    }
-
-    w5300_write_reg_buf(W5300_SHAR, mac, 6);    /* set mac address */
-    w5300_write_reg_buf(W5300_GAR, gw, 4);      /* set gateway IP address */
-    w5300_write_reg_buf(W5300_SUBR, sn, 4);     /* set subnet mask address */
-    w5300_write_reg_buf(W5300_SIPR, ip, 6);     /* set source IP address */
-    PRINT0(&msg_configured);
-    return 0;
-}
 
   int parse_channel_def( const QLSTR_t *name, ip_peer *peer, unsigned short socket_num ) {
       static unsigned short namelen;
@@ -453,7 +393,7 @@ static PT_THREAD(test(void)) {
         tcp_pack_size[i] = 0;
         recv_buf_ptr[i] = NULL;
       }
-      configure_W5300();
+      w5300_configure();
       dhcpc_init();
     /* ptres = test(); */
     /* sprintf(foo,"PT returned %d\n", ptres); */

@@ -1,5 +1,8 @@
 #include <qdos.h>
 #include <string.h>
+#include "pt.h"
+#include "timer.h"
+#include "types.h"
 #include "w5300-ops.h"
 #include "w5300-access.h"
 #include "w5300-regs.h"
@@ -17,6 +20,37 @@ static const uint32 possible_addr[] = {
     0x4c8000,
     0x4fc000
 };
+/* Make sure emory config follows the rules from datasheet, no checks done! */
+static uint8 tx_mem_conf[8] = {8,8,8,8,8,8,8,8};
+static uint8 rx_mem_conf[8] = {8,8,8,8,8,8,8,8};
+/* locally administered mac address */
+/* See: https://en.wikipedia.org/wiki/MAC_address#Ranges_of_group_and_locally_administered_addresses */
+static uint8 mac[6] = {0x02,0x00,0x00,0x42,0x42,0x42};
+
+static struct pt pt;
+static struct timer timer;
+
+static PT_THREAD(w5300_reset_impl(void)) {
+  PT_BEGIN(&pt);
+  timer_set(&timer, (clock_time_t)(2 * CLOCK_SECOND));
+  *(vuint8 *)(w5300_base_addr + 0x400) = 0;
+  PT_WAIT_UNTIL(&pt,timer_expired(&timer));
+  PT_END(&pt);
+}
+
+void w5300_reset() {
+  PT_INIT(&pt);
+  PRINT0("Resetting...");
+  while(PT_ENDED != w5300_reset_impl());
+  PRINT0("done\n");
+}
+
+void w5300_memory_config() {
+  w5300_write_reg_buf(W5300_TMSR0, tx_mem_conf, 8);
+  w5300_write_reg_buf(W5300_RMSR0, rx_mem_conf, 8);
+   /* 8x8kB blocks of TX mem and 8x8kB blocks of RX mem, see datasheet */
+   w5300_write_reg16(W5300_MTYPER, 0x00FF);
+}
 
 int w5300_set_base_address() {
     int i;
@@ -32,7 +66,7 @@ int w5300_set_base_address() {
 
     if (i == NUM_PROBE_ADDRESSES) {
         PRINT0("NOT FOUND");
-        return -1;
+        return 0;
     }
 
     addr = w5300_base_addr;
@@ -47,4 +81,16 @@ int w5300_set_base_address() {
     PRINT0(&outbuf[i+1]);
     PRINT0("\n");
     return 1;
+}
+
+int w5300_configure() {
+  if(!w5300_set_base_address()) {
+    return 0;
+  }
+  w5300_reset();
+  w5300_memory_config();
+  /* set mac address */
+  PRINT0("Set SHAR\n");
+  w5300_write_reg_buf(W5300_SHAR, mac, 6);
+  return 1;
 }

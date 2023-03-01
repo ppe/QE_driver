@@ -1,7 +1,7 @@
 CC = qdos-gcc
 CFLAGS = -nostartfiles -fomit-frame-pointer
-DHCP_COMMON_OBJS = debug.o heap.o clock-arch.o timer.o dhcpc.o socket.o w5300.o w5300-access.o w5300-ops.o
 DRIVER_OBJS = chan_ops.o resolv.o qedrv.o $(DHCP_COMMON_OBJS)
+DHCP_COMMON_OBJS = debug.o heap.o clock-arch.o timer.o dhcpc.o socket.o w5300-access.o w5300-ops.o
 DHCPC_OBJS =  dhcpc_main.o $(DHCP_COMMON_OBJS)
 DHCPEXT_OBJS = dhcpext.o dhcpbas.s $(DHCP_COMMON_OBJS)
 TFTP_OBJS = tftp.o timer.o clock-arch.o socket.o w5300.o debug.o heap.o

@@ -27,6 +27,10 @@ void w5300_write_reg_buf(uint16 reg, uint8 *buffer, uint8 size) {
     }
 }
 
+uint8 w5300_read_reg8(uint16 reg) {
+    return (*(vuint8 *)(w5300_base_addr + reg));
+}
+
 uint16 w5300_read_reg16(uint16 reg) {
     return (*(vuint16 *)(w5300_base_addr + reg));
 }
@@ -35,8 +39,12 @@ uint32 w5300_read_reg32(uint32 reg) {
     return (*(vuint32 *)(w5300_base_addr + reg));
 }
 
-int w5300_read_buf(uint16 reg, uint8 *buffer, uint8 size) {
+void w5300_read_reg_buf(uint16 reg, uint8 *buffer, uint8 size) {
+    int i;
 
+    for (i = 0; i < size; i++) {
+        buffer[i] = w5300_read_reg8(reg + i);
+    }
 }
 
 void w5300_read_fifo(SOCKET s, uint16 *buffer, uint16 size) {

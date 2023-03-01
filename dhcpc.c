@@ -36,12 +36,13 @@
 #include <qdos.h>
 
 #include "clock-arch.h"
-#include "w5300.h"
 #include "socket.h"
 #include "dhcpc.h"
 #include "timer.h"
 #include "pt.h"
 #include "resolv.h"
+#include "w5300-regs.h"
+#include "w5300-access.h"
 
 #define STATE_INITIAL         0
 #define STATE_SENDING         1
@@ -143,7 +144,7 @@ static u8_t * add_end(u8_t *optptr) {
 /*---------------------------------------------------------------------------*/
 static void create_msg(register struct dhcp_msg *m) {
   uint8 hostaddr[4];
-  getSIPR(hostaddr);
+  w5300_read_reg_buf(W5300_SIPR, hostaddr, 4);
   m->op = DHCP_REQUEST;
   m->htype = DHCP_HTYPE_ETHERNET;
   m->hlen = s.mac_len;
@@ -314,9 +315,9 @@ static PT_THREAD(handle_dhcp(void)) {
 #endif
 
   /* dhcpc_configured(&s); */
-  setSIPR((uint8 *)s.ipaddr);
-  setGAR((uint8 *)s.default_router);
-  setSUBR((uint8 *)s.netmask);
+  w5300_write_reg_buf(W5300_SIPR, (uint8 *)s.ipaddr, 4);
+  w5300_write_reg_buf(W5300_GAR, (uint8 *)s.default_router, 4);
+  w5300_write_reg_buf(W5300_SUBR, (uint8 *)s.netmask, 4);
   set_dns_server((uint8 *)s.dnsaddr);
   /* Close the socket and drain any potentially remaining packets */
   socket_close((SOCKET)s.conn);
@@ -348,37 +349,37 @@ static PT_THREAD(handle_dhcp(void)) {
         " : : "m"(a6_store));
   }
 
-    /*---------------------------------------------------------------------------*/
-    void dhcpc_init() {
-      uint8 addr[4] = {0, 0, 0, 0};
-      struct timer timer;
-      QLSTR_INIT(msg_configuring, "Configuring with DHCP...");
-      QLSTR_INIT(msg_timer_expired, "timed out\n");
-      QLSTR_INIT(msg_configured, "done\n");
+/*---------------------------------------------------------------------------*/
+void dhcpc_init() {
+    uint8 addr[4] = {0, 0, 0, 0};
+    struct timer timer;
+    QLSTR_INIT(msg_configuring, "Configuring with DHCP...");
+    QLSTR_INIT(msg_timer_expired, "timed out\n");
+    QLSTR_INIT(msg_configured, "done\n");
 
-      setSIPR(addr);                /* set source IP address */
-      getSHAR((uint8 *)s.mac_addr); /* Get source HW address (MAC) */
-      s.mac_len = 6;
+    w5300_write_reg_buf(W5300_SIPR, addr, 4);   /* set source IP address */
+    s.mac_len = 6;
+    w5300_read_reg_buf(W5300_SHAR, (uint8 *)s.mac_addr, s.mac_len); /* Get source HW address (MAC) */
 
-      s.state = STATE_INITIAL;
-      /* s.conn = uip_udp_new(&addr, HTONS(DHCPC_SERVER_PORT)); */
+    s.state = STATE_INITIAL;
+    /* s.conn = uip_udp_new(&addr, HTONS(DHCPC_SERVER_PORT)); */
 
-      ut_mtext((chanid_t)0, &msg_configuring);
-      open_socket((SOCKET)0, Sn_MR_UDP, DHCPC_CLIENT_PORT, 0);
-      s.conn = 0; /* Number of socket */
-      PT_INIT(&s.pt);
-      timer_set(&timer, (clock_time_t)(20 * CLOCK_SECOND));
-      while(!timer_expired(&timer)) {
+    ut_mtext((chanid_t)0, &msg_configuring);
+    open_socket((SOCKET)0, W5300_Sn_MR_UDP, DHCPC_CLIENT_PORT, 0);
+    s.conn = 0; /* Number of socket */
+    PT_INIT(&s.pt);
+    timer_set(&timer, (clock_time_t)(20 * CLOCK_SECOND));
+    while(!timer_expired(&timer)) {
         if(PT_ENDED == handle_dhcp()) {
-          ut_mtext((chanid_t)0, &msg_configured);
-          return;
+            ut_mtext((chanid_t)0, &msg_configured);
+            return;
         }
-      }
-      ut_mtext((chanid_t)0,&msg_timer_expired);
-      /* Link in a 50/60 Hz poll task to run the protothread */
-      /* dhcpc_poll_task_link.l_rtn = dhcpc_poll_task; */
-      /* dhcpc_poll_task_link.l_next = NULL; */
-      /* mt_lpoll((QL_LINK_t *)&dhcpc_poll_task_link); */
-  }
+    }
+    ut_mtext((chanid_t)0,&msg_timer_expired);
+    /* Link in a 50/60 Hz poll task to run the protothread */
+    /* dhcpc_poll_task_link.l_rtn = dhcpc_poll_task; */
+    /* dhcpc_poll_task_link.l_next = NULL; */
+    /* mt_lpoll((QL_LINK_t *)&dhcpc_poll_task_link); */
+}
   /*---------------------------------------------------------------------------*/
   void dhcpc_appcall(void) { handle_dhcp(); }

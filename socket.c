@@ -220,7 +220,8 @@ int32 socket_recv(SOCKET sock, char* buf ) {
           if( ++wait_cycles > MAX_WAIT_CYCLES ) {
               return -1;
           }
-          wait_10ms(1);
+          /* TODO: come up with a sensible wait mechanism! */
+          /* wait_10ms(1); */
           sock_status = w5300_read_reg16(W5300_Sn_SSR(sock));
       }
       dev_pack_size = w5300_read_reg16(fifo_addr);

@@ -6,8 +6,8 @@
 #include "debug.h"
 #include "dhcpc.h"
 #include "pt.h"
-#include "w5300.h"
 #include "timer.h"
+#include "w5300-ops.h"
 
 void setup_basic_keywords(void);
 int dhcpinit_impl(void);
@@ -33,16 +33,6 @@ void set_dns_server(uint8 *addr) {
   ut_mtext((chanid_t)0, qlstr);
 }
 
-static PT_THREAD(reset_w5300(void)) {
-  PT_BEGIN(&pt);
-  timer_set(&timer, (clock_time_t)(2 * CLOCK_SECOND));
-  *hw_reset_addr = 0;
-  PT_WAIT_UNTIL(&pt, timer_expired(&timer));
-  setSHAR(mac); /* set source hardware address */
-  sysinit(tx_mem_conf, rx_mem_conf);
-  PT_END(&pt);
-}
-
 int main(int ac, char **av) {
   _super();
   mymem = (struct extmem *)sv_memalloc(sizeof(struct extmem));
@@ -51,6 +41,13 @@ int main(int ac, char **av) {
   qlstr = cstr_to_ql((QLSTR_t *)&(mymem->qlstr_msg), mymem->strmsg);
   ut_mtext((chanid_t)0, qlstr);
   setup_basic_keywords();
+  if(!w5300_configure()) {
+    sprintf(mymem->strmsg, "Configuration failed\n");
+    qlstr = cstr_to_ql((QLSTR_t *)&(mymem->qlstr_msg), mymem->strmsg);
+    ut_mtext((chanid_t)0, qlstr);
+    return -1;
+  }
+  return 0;
 }
 
 int dhcpinit_impl() {
@@ -61,6 +58,12 @@ int dhcpinit_impl() {
 int omanreset_impl() {
   PT_INIT(&pt);
   ut_mtext((chanid_t)0, (QLSTR_t *)&msg_reset_w5300);
-  while (PT_ENDED != reset_w5300()) ;
+  if(!w5300_configure()) {
+    sprintf(mymem->strmsg, "Configuration failed\n");
+    qlstr = cstr_to_ql((QLSTR_t *)&(mymem->qlstr_msg), mymem->strmsg);
+    ut_mtext((chanid_t)0, qlstr);
+    return -1;
+  }
   ut_mtext((chanid_t)0, (QLSTR_t *)&msg_done);
+  return 0;
 }
