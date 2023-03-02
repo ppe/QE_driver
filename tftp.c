@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "w5300-regs.h"
+
 /* TODO uses a fixed socket and static global state -> there can only be one
  * tftp get in progress */
 
@@ -270,7 +272,7 @@ int main(int ac, char **av) {
   srand((unsigned int)mt_rclck());
   src_port = (uint16)(rand() & 0xFFFF);
   printf("Using source port %ud\n", src_port);
-  open_socket(socket, Sn_MR_UDP, src_port, 0);
+  open_socket(socket, W5300_Sn_MR_UDP, src_port, 0);
   cstr_to_ql((QLSTR_t *)&(fname), av[1]);
   status = tftp_get((QLSTR_t *)&fname, destination);
   if (status < 0) {
