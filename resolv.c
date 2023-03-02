@@ -11,6 +11,8 @@
 #include <unistd.h>
 #include <qdos.h>
 
+#include "w5300-regs.h"
+
 /* Adapted from http://www.binarytides.com/blog/dns-query-code-in-c-with-winsock/ */
 #define CACHED_ENTRIES 10
 static struct dns_cache_entry entry_cache[CACHED_ENTRIES];
@@ -181,7 +183,7 @@ void send_udp(SOCKET s, char * buf, uint32 len)
 
  switch(getSn_SSR(s))
  {
-  case SOCK_UDP:
+  case W5300_SOCK_UDP:
       /* dump(buf,len); */
       sent = sendto(s, (uint8 *)buf, len, dns_server_addr, destport);
       if (len != sent) {
@@ -205,7 +207,7 @@ void read_udp(SOCKET s, char * buf, uint32 len)
 
   switch(getSn_SSR(s))
     {
-    case SOCK_UDP:
+    case W5300_SOCK_UDP:
       for(i=0;i<10;i++) {
         if((getSn_RX_RSR(s)) > 0)                   /* check the size of received data */
           {
@@ -219,7 +221,7 @@ void read_udp(SOCKET s, char * buf, uint32 len)
         }
       }
       break;
-    case SOCK_CLOSED:                                  /* CLOSED */
+    case W5300_SOCK_CLOSED:                                  /* CLOSED */
       socket_close(s);                                       /* close the SOCKET */
       break;
     default:
@@ -336,7 +338,7 @@ void fillQuery(char * dnsQueryBuffer, char* host) {
 void sendQueryAndReceiveResponse(char *buf, uint32 bufSize ,uint32 len) {
     SOCKET s = 7;  /* Number of socket to use: 0-7 */
     /* TRACE(("socket\n")); */
-    open_socket(s,Sn_MR_UDP,4224,0);
+    open_socket(s,W5300_Sn_MR_UDP,4224,0);
     /* TRACE(("send_udp\n")); */
     send_udp(s, buf, len);
     /* TRACE(("read_udp\n")); */
