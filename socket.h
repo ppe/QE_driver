@@ -55,6 +55,7 @@ extern char *recv_buf[];
 extern int tcp_pack_remain[];
 extern int tcp_pack_size[];
 extern char *recv_buf_ptr[];
+extern uint16 curr_byte[];
 
 struct peek_cache_entry {
 	size_t bytes_available;
@@ -73,7 +74,7 @@ struct peek_cache_entry {
 uint8    open_socket(SOCKET s, uint8 protocol, uint16 port, uint16 flag);
 uint8 is_closed( SOCKET s );
 
-uint32 bytes_available( SOCKET s );
+uint16 bytes_available( SOCKET s );
 void socket_drain(SOCKET s);
 /**
  * Close a SOCKET.
@@ -98,7 +99,7 @@ uint8    listen(SOCKET s);
 /**
  * It sends TCP data on a connection SOCKET
  */
-int32   socket_send(int s, uint8 * buf, uint32 len);
+int16   socket_send(int s, uint8 * buf, uint16 len);
 
 /**
  * It receives TCP data on a connection SOCKET

@@ -2,6 +2,7 @@
 #include "resolv.h"
 #include "in.h"
 #include "heap.h"
+#include "socket.h"
 
 #include <netdb.h>
 #include <limits.h>
@@ -15,6 +16,8 @@
 
 /* Adapted from http://www.binarytides.com/blog/dns-query-code-in-c-with-winsock/ */
 #define CACHED_ENTRIES 10
+#define DNS_SERVER_PORT 53
+
 static struct dns_cache_entry entry_cache[CACHED_ENTRIES];
 static int initialized = 0;
 static unsigned long cache_refcount;
@@ -176,59 +179,6 @@ void store_in_cache( char * hostname, unsigned long address ) {
     }
 }
 
-void send_udp(SOCKET s, char * buf, uint32 len)
-{
- uint16 destport = 53;
- uint32 sent = 0;
-
- switch(getSn_SSR(s))
- {
-  case W5300_SOCK_UDP:
-      /* dump(buf,len); */
-      sent = sendto(s, (uint8 *)buf, len, dns_server_addr, destport);
-      if (len != sent) {
-        TRACE(("%d : Sendto Fail.len=%d, sent=%u, ", s, len, sent));
-        TRACE(("%d.%d.%d.%d(%d)\r\n", dns_server_addr[0], dns_server_addr[1], dns_server_addr[2],
-               dns_server_addr[3], destport));
- }
- break;
- default:
- TRACE(("UDP send failed. Socket not in SOCK_UDP state. Closing socket.\n"));
- socket_close(s);
- break;
-}
-}
-
-void read_udp(SOCKET s, char * buf, uint32 len)
-{
-  static uint8 destip[4];
-  static uint16 destport;
-  static int i;
-
-  switch(getSn_SSR(s))
-    {
-    case W5300_SOCK_UDP:
-      for(i=0;i<10;i++) {
-        if((getSn_RX_RSR(s)) > 0)                   /* check the size of received data */
-          {
-            len = recvfrom(s,(uint8 *)buf,len,destip,&destport);  /* receive data from a destination */
-            TRACE(("Received %d bytes\n",len));
-            /* dump(buf,len); */
-            break;
-          } else {
-          TRACE(("Still waiting for answer... "));
-          sleep(1);
-        }
-      }
-      break;
-    case W5300_SOCK_CLOSED:                                  /* CLOSED */
-      socket_close(s);                                       /* close the SOCKET */
-      break;
-    default:
-      break;
-    }
-}
-
 char* ReadName(char* reader,char* buffer,int* count)
 {
     char *name;
@@ -337,12 +287,16 @@ void fillQuery(char * dnsQueryBuffer, char* host) {
 
 void sendQueryAndReceiveResponse(char *buf, uint32 bufSize ,uint32 len) {
     SOCKET s = 7;  /* Number of socket to use: 0-7 */
+    uint32 sent;
+    static uint8 destip[4];
+    static uint16 destport;
+
     /* TRACE(("socket\n")); */
     open_socket(s,W5300_Sn_MR_UDP,4224,0);
     /* TRACE(("send_udp\n")); */
-    send_udp(s, buf, len);
+    sent = sendto(s, (uint8 *)buf, len, dns_server_addr, DNS_SERVER_PORT);
     /* TRACE(("read_udp\n")); */
-    read_udp(s, buf, bufSize);
+    len = recvfrom(s,(uint8 *)buf,bufSize,destip,&destport);  /* receive data from a destination */
     socket_close(s);
     return;
 }

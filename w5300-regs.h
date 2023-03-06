@@ -80,6 +80,7 @@
 #define W5300_Sn_MR_MODE_MASK 0x07                 /* And mask to extract protocol mode */
 
 #define W5300_Sn_CR(n)        (W5300_SOCKET_REG_BASE + n * W5300_SOCKET_REG_SIZE + 0x02)
+#define W5300_Sn_CR1(n)       (W5300_SOCKET_REG_BASE + n * W5300_SOCKET_REG_SIZE + 0x03)
 #define W5300_Sn_CR_OPEN      0x01                 /**< OPEN command value of Sn_CR. */
 #define W5300_Sn_CR_LISTEN    0x02                 /**< LISTEN command value of Sn_CR. */
 #define W5300_Sn_CR_CONNECT   0x04                 /**< CONNECT command value of Sn_CR. */
@@ -117,6 +118,7 @@
  *  SOCKETn status register
  */
 #define W5300_Sn_SSR(n)       (W5300_SOCKET_REG_BASE + n * W5300_SOCKET_REG_SIZE + 0x08)
+#define W5300_Sn_SSR1(n)      (W5300_Sn_SSR(n) + 1)
 #define W5300_SOCK_CLOSED     0x00                 /**< SOCKETn is released */
 #define W5300_SOCK_ARP        0x01                 /**< ARP-request is transmitted in order to acquire destination hardware address. */
 #define W5300_SOCK_INIT       0x13                 /**< SOCKETn is open as TCP mode. */
@@ -193,6 +195,7 @@
  *  SOCKETn RX received size register
  */
 #define W5300_Sn_RX_RSR(n)    (W5300_SOCKET_REG_BASE + n * W5300_SOCKET_REG_SIZE + 0x28)
+#define W5300_Sn_RX_RSR2(n)    (W5300_SOCKET_REG_BASE + n * W5300_SOCKET_REG_SIZE + 0x2A)
 
 /**
  *  SOCKETn fragment register

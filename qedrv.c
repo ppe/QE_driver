@@ -1,5 +1,6 @@
 #include <qdos.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "types.h"
 #include "resolv.h"
@@ -16,6 +17,7 @@
 #define PRINTB0( ch ) (void)io_sbyte( (chanid_t)0, (timeout_t)0, ch )
 #define PRINT0( msg ) (void)io_sstrg( (chanid_t)0, (timeout_t)0, msg, strlen(msg))
 
+#define ALT_SYS_STACK_SIZE 4096
 // Total size of channel block
 #define CHAN_BLOCK_SIZE 0x100
 
@@ -48,6 +50,9 @@ typedef struct ip_peers {
 struct pt pt;
 static int poll_count = 0;
 static QL_LINK_t poll_task_link;
+static char *altsysstack;
+char *altsysstack_top;
+extern long ch_io_stub(void);
 
 /* 4 bytes of ASCII in uppercase */
 const uint32 SCK_=0x53434b5f, TCP_=0x5443505f, UDP_=0x5544505f;
@@ -327,7 +332,7 @@ static QLSTR_INIT(msg_dhcp_done, "DHCP configured.\n");
           uint16 bytes_read = 0;
           int error_code = ERR_OK;
 
-          bytes_read = fline( chanblk, timeout, (uint16)( param2 & 0x0000FFFF ), &addr1, &error_code );
+          bytes_read = fline( chanblk, (uint16)( param2 & 0x0000FFFF ), &addr1, &error_code );
           asm( " move.l %0,a0
                         move.l %1,a1
                         move.l %2,d1
@@ -383,7 +388,7 @@ static PT_THREAD(test(void)) {
     PRINT0("QE Driver for W5300\n");
     TRACE(("Linking QE driver._-O-_.\n"));
     // linkblk.ld_next will be populate by QDOS when driver is linked
-    linkblk.ld_io = ch_io;
+    linkblk.ld_io = ch_io_stub;
     linkblk.ld_open = ch_open;
     linkblk.ld_close = ch_close;
     mt_liod( &linkblk );
@@ -392,9 +397,14 @@ static PT_THREAD(test(void)) {
         tcp_pack_remain[i] = 0;
         tcp_pack_size[i] = 0;
         recv_buf_ptr[i] = NULL;
-      }
-      w5300_configure();
-      dhcpc_init();
+    }
+    w5300_configure();
+    dhcpc_init();
+    _super();
+    altsysstack = sv_memalloc( ALT_SYS_STACK_SIZE );
+    altsysstack_top = altsysstack + ALT_SYS_STACK_SIZE;
+    _user();
+    srand((unsigned int)mt_rclck());
     /* ptres = test(); */
     /* sprintf(foo,"PT returned %d\n", ptres); */
     /* PRINT0(foo); */

@@ -28,6 +28,7 @@
 /* #include "lstring.h" */
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "socket.h"
 #include "heap.h"
 #include "debug.h"
@@ -48,8 +49,9 @@ uint8    check_sendok_flag[MAX_SOCK_NUM];
 char *recv_buf[MAX_SOCK_NUM];
 int tcp_pack_remain[MAX_SOCK_NUM];
 int tcp_pack_size[MAX_SOCK_NUM];
+char *tcp_pack_ptr[MAX_SOCK_NUM];
 char *recv_buf_ptr[MAX_SOCK_NUM];
-
+uint16 curr_byte[MAX_SOCK_NUM];
 
 uint8 open_socket(SOCKET s, uint8 protocol, uint16 port, uint16 flag) {
   w5300_write_reg16(W5300_Sn_MR(s), (uint16)(protocol | flag));
@@ -57,7 +59,8 @@ uint8 open_socket(SOCKET s, uint8 protocol, uint16 port, uint16 flag) {
     w5300_write_reg16(W5300_Sn_PORTR(s), port);
   } else {
     /* TODO: generate a random port >1023 that is not currently not in use */
-    w5300_write_reg16(W5300_Sn_PORTR(s), ++iinchip_source_port);
+    /* w5300_write_reg16(W5300_Sn_PORTR(s), ++iinchip_source_port); */
+    w5300_write_reg16(W5300_Sn_PORTR(s), (uint16)(rand() & 0xFFFF));
   }
    w5300_write_reg16(W5300_Sn_CR(s), W5300_Sn_CR_OPEN);
    check_sendok_flag[s] = 1;
@@ -69,11 +72,11 @@ void socket_drain(SOCKET s) {
 }
 
 uint8 is_closed(SOCKET s) {
-    return  W5300_SOCK_CLOSED == w5300_read_reg16(W5300_Sn_SSR(s));
+    return  W5300_SOCK_CLOSED == w5300_read_reg8(W5300_Sn_SSR1(s));
 }
 
-uint32 bytes_available(SOCKET s) {
-  return w5300_read_reg32(W5300_Sn_RX_RSR(s));
+uint16 bytes_available(SOCKET s) {
+  return w5300_read_reg16(W5300_Sn_RX_RSR2(s));
 }
 
 void socket_close(SOCKET s) {
@@ -105,19 +108,23 @@ void socket_close(SOCKET s) {
 }
 
 uint8 connect(SOCKET s, uint8 * addr, uint16 port) {
-   uint16 socket_status = 0;
+   uint8 socket_status = 0;
 
    if (((uint32)addr == 0xFFFFFFFF) || ((uint32)addr == 0) || (port == 0x00)) { return 0; }
-   w5300_write_reg32(W5300_Sn_DIPR(s), *((uint32 *)addr));
+   w5300_write_reg_buf(W5300_Sn_DIPR(s), addr, 4);
+   /* w5300_write_reg32(W5300_Sn_DIPR(s), *((uint32 *)addr)); */
    w5300_write_reg16(W5300_Sn_DPORTR(s), port);
    w5300_write_reg16(W5300_Sn_CR(s), W5300_Sn_CR_CONNECT);
    /* TODO: timeout to prevent possible eternal busy loop? */
+   TRACE((" C%d ", s));
    while(w5300_read_reg16(W5300_Sn_CR(s)));
+   TRACE((" S "));
    do {
-      socket_status = w5300_read_reg16(W5300_Sn_SSR(s));
+      socket_status = w5300_read_reg8(W5300_Sn_SSR1(s));
    } while (socket_status != W5300_SOCK_CLOSED &&
             socket_status != W5300_SOCK_ESTABLISHED &&
             socket_status != W5300_SOCK_FIN_WAIT);
+      TRACE((" =>%x R ", socket_status));
    return 1;
 }
 
@@ -129,14 +136,14 @@ void disconnect(SOCKET s) {
 }
 
 uint8 listen(SOCKET s) {
-  if (w5300_read_reg16(W5300_Sn_SSR(s)) != W5300_SOCK_INIT) { return 0; }
+  if (w5300_read_reg8(W5300_Sn_SSR1(s)) != W5300_SOCK_INIT) { return 0; }
   w5300_write_reg16(W5300_Sn_CR(s), W5300_Sn_CR_LISTEN);
   return 1;
 }
 
-int32 socket_send(int s, uint8 * buf, uint32 len) {
+int16 socket_send(int s, uint8 * buf, uint16 len) {
     static uint8 status=0;
-    static uint32 ret=0;
+    static uint16 ret=0;
     static uint32 freesize=0;
     TRACE(("socket_send: s=%d,buf=%08x,len=%08x\n", s, buf, len));
     status = 0;
@@ -155,7 +162,7 @@ int32 socket_send(int s, uint8 * buf, uint32 len) {
    w5300_write_fifo(s, (uint16 *)buf, ret);
    if(!check_sendok_flag[s]) { /* if first send, skip. */
       while (!(w5300_read_reg16(W5300_Sn_IR(s)) & W5300_Sn_IR_SENDOK)) { /* wait previous SEND command completion. */
-         if (w5300_read_reg16(W5300_Sn_SSR(s)) == W5300_SOCK_CLOSED) { /* check timeout or abnormal closed. */ 
+         if (w5300_read_reg8(W5300_Sn_SSR1(s)) == W5300_SOCK_CLOSED) { /* check timeout or abnormal closed. */
             return -1;
          }
       }
@@ -196,7 +203,7 @@ int32 socket_recv(SOCKET sock, char* buf ) {
     register uint16 wait_cycles;
     register uint32 fifo_addr;
     register int i;
-    uint32 bytes_available;
+    uint16 bytes_available;
     static uint16 dev_pack_size;
     static int to_recv = 0;
 
@@ -208,13 +215,14 @@ int32 socket_recv(SOCKET sock, char* buf ) {
     i = (int)sock;
     TRACE(("%d: receive to buf at %08x\n",i,buf));
     if( tcp_pack_remain[i] > 0 ) {
+        TRACE(("RMN %d ", tcp_pack_remain[i]));
         to_recv = tcp_pack_remain[i] > TCP_MAX_MTU ? TCP_MAX_MTU : tcp_pack_remain[i];
         tcp_pack_remain[i] -= to_recv;
     } else {
-
-      sock_status = w5300_read_reg16(W5300_Sn_SSR(sock));
+      sock_status = w5300_read_reg8(W5300_Sn_SSR1(sock));
       fifo_addr = W5300_Sn_RX_FIFOR(sock);
-      while ((bytes_available = w5300_read_reg32(W5300_Sn_RX_RSR(sock)) == 0)
+      TRACE(("FIFO addr %08x\n",fifo_addr));
+      while ((bytes_available = w5300_read_reg16(W5300_Sn_RX_RSR2(sock)) == 0)
               && (sock_status != W5300_SOCK_CLOSED)
               && (sock_status != W5300_SOCK_CLOSE_WAIT)) {
           if( ++wait_cycles > MAX_WAIT_CYCLES ) {
@@ -222,7 +230,7 @@ int32 socket_recv(SOCKET sock, char* buf ) {
           }
           /* TODO: come up with a sensible wait mechanism! */
           /* wait_10ms(1); */
-          sock_status = w5300_read_reg16(W5300_Sn_SSR(sock));
+          sock_status = w5300_read_reg8(W5300_Sn_SSR1(sock));
       }
       dev_pack_size = w5300_read_reg16(fifo_addr);
       if( dev_pack_size > TCP_MAX_MTU ) {
@@ -276,8 +284,8 @@ copy_loop_end: dbra    d0,copy_loop
            : "a0", "a1", "d0", "d1"
         );
     if( !(tcp_pack_remain[i] > 0) ) {
-      w5300_write_reg16(W5300_Sn_CR(sock), W5300_Sn_CR_RECV);
-      while(w5300_read_reg16(W5300_Sn_CR(sock)));
+      w5300_write_reg8(W5300_Sn_CR1(sock), W5300_Sn_CR_RECV);
+      while(w5300_read_reg8(W5300_Sn_CR1(sock)));
     }
     return tcp_pack_size[i];
 }
@@ -306,7 +314,7 @@ uint32   sendto(SOCKET s, uint8 * buf, uint32 len, uint8 * addr, uint16 port) {
       /* warning --------------------------------------- */
       /* Sn_IR_TIMEOUT causes the decrement of Sn_TX_FSR */
       /* ----------------------------------------------- */
-      status = w5300_read_reg16(W5300_Sn_SSR(s));
+      status = w5300_read_reg8(W5300_Sn_SSR1(s));
       if ((status == W5300_SOCK_CLOSED) || (isr & W5300_Sn_IR_TIMEOUT)) {
          TRACE(("%d: send fail.status=0x%02x,isr=%02x\n",s,status,isr));
          w5300_write_reg16(W5300_Sn_IR(s), W5300_Sn_IR_TIMEOUT);
