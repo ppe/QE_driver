@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "w5300-ops.h"
 #include "w5300-regs.h"
 
 /* TODO uses a fixed socket and static global state -> there can only be one
@@ -269,6 +270,7 @@ int main(int ac, char **av) {
   } else {
     destination = av[2];
   }
+  w5300_set_base_address();
   srand((unsigned int)mt_rclck());
   src_port = (uint16)(rand() & 0xFFFF);
   printf("Using source port %ud\n", src_port);
